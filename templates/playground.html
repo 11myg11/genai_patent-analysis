@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% block title %}Playground{% endblock %}
+{% block breadcrumb %}Design Playground{% endblock %}
+{% block content %}
+<div class="p-7 flex flex-col gap-5" x-data="playgroundPage()" x-init="init()">
+
+  <!-- Header -->
+  <div class="flex items-start justify-between">
+    <div>
+      <h1 class="font-display text-2xl font-bold text-white tracking-tight">Design-Around Playground</h1>
+      <p class="mt-1 text-sm" style="color:var(--text2)">AI-powered patent risk analysis and innovation recommendation engine.</p>
+    </div>
+    <!-- Mode pill -->
+    <div class="flex items-center gap-1 p-1" style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px">
+      <button @click="mode='risk'" class="btn" style="padding:6px 16px;font-size:12px;border-radius:8px;transition:all 0.2s"
+              :style="mode==='risk'?'background:linear-gradient(135deg,#4f46e5,#6366f1);color:#fff;box-shadow:0 3px 10px rgba(99,102,241,0.3)':'background:transparent;color:var(--text3)'">
+        ⚠ Risk Analysis
+      </button>
+      <button @click="mode='innovate'" class="btn" style="padding:6px 16px;font-size:12px;border-radius:8px;transition:all 0.2s"
+              :style="mode==='innovate'?'background:linear-gradient(135deg,#065f46,#10b981);color:#fff;box-shadow:0 3px 10px rgba(16,185,129,0.3)':'background:transparent;color:var(--text3)'">
+        ✦ Innovate
+      </button>
+    </div>
+  </div>
+
+  <!-- Input card -->
+  <div class="card p-5" style="border-radius:16px">
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      <div>
+        <p class="label mb-1.5">Product ID</p>
+        <input x-model="form.product_id" type="text" placeholder="FYG-WS-2024-A7" class="w-full px-3 py-2.5 text-sm"/>
+      </div>
+      <div>
+        <p class="label mb-1.5">Component Scope</p>
+        <input x-model="form.component_scope" type="text" placeholder="Automotive laminated windshield" class="w-full px-3 py-2.5 text-sm"/>
+      </div>
+      <div>
+        <p class="label mb-1.5">Jurisdiction</p>
+        <select x-model="form.jurisdiction" class="w-full px-3 py-2.5 text-sm">
+          <option value="US">🇺🇸 US</option>
+          <option value="EP">🇪🇺 EP</option>
+          <option value="CN">🇨🇳 CN</option>
+        </select>
+      </div>
+    </div>
+    <div class="mb-4">
+      <p class="label mb-1.5">Design Specification</p>
+      <textarea x-model="form.specs" rows="5"
+        placeholder="Describe your design in detail — materials, dimensions, construction, functional novelties…"
+        class="w-full px-3 py-3 text-sm resize-none" style="line-height:1.7"></textarea>
+    </div>
+    <div class="flex items-center gap-3">
+      <button class="btn btn-primary" style="padding:10px 28px" @click="runAnalysis()"
+              :disabled="!form.specs||!form.product_id||loading">
+        <span x-show="!loading" class="flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 3l14 9-14 9V3z" fill="currentColor"/></svg>
+          Execute Analysis
+        </span>
+        <span x-show="loading" class="flex items-center gap-2">
+          <div class="spinner" style="width:14px;height:14px"></div>Running Pipeline…
+        </span>
+      </button>
+      <button class="btn btn-secondary" @click="reset()">Clear</button>
+      <div class="ml-3 flex items-center gap-2">
+        <div style="width:6px;height:6px;border-radius:50%"
+             :style="mode==='risk'?'background:#818cf8;box-shadow:0 0 6px #818cf8':'background:#34d399;box-shadow:0 0 6px #34d399'"></div>
+        <span class="text-xs" style="color:var(--text3)"
+              x-text="mode==='risk'?'Hybrid search + dual-agent IP risk assessment':'Innovation generation + Fuyao manufacturing audit loop'"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dual output -->
+  <div x-show="result" x-transition class="grid grid-cols-2 gap-5">
+
+    <!-- LEFT: risk + matches -->
+    <div class="card flex flex-col overflow-hidden" style="border-radius:16px">
+      <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border)">
+        <div class="flex items-center gap-3">
+          <p class="label">Patent Risk Check</p>
+          <span class="badge"
+                :class="{
+                  'badge-high':   result&&result.risk_status==='HIGH',
+                  'badge-medium': result&&result.risk_status==='MEDIUM',
+                  'badge-low':    result&&result.risk_status==='LOW',
+                  'badge-clear':  result&&result.risk_status==='CLEAR',
+                }"
+                x-text="result?result.risk_status:''"></span>
+        </div>
+        <span class="font-mono text-xs" style="color:var(--text3)" x-text="result?'~'+result.token_budget_used+' tokens':''"></span>
+      </div>
+
+      <!-- Infringement map -->
+      <div x-show="result&&result.infringement_map&&result.infringement_map.length>0">
+        <div class="px-5 py-2" style="border-bottom:1px solid var(--border)"><p class="label">Infringement Map</p></div>
+        <div style="max-height:160px;overflow-y:auto">
+          <table>
+            <thead><tr><th>Claim</th><th>Element</th><th>Overlap</th></tr></thead>
+            <tbody>
+              <template x-for="(r,i) in (result?result.infringement_map:[])" :key="i">
+                <tr>
+                  <td class="font-mono text-xs" style="color:#818cf8;white-space:nowrap" x-text="r.claim_ref"></td>
+                  <td class="text-xs" x-text="r.element"></td>
+                  <td class="text-xs" style="color:var(--text2)" x-text="r.overlap"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Matched snippets -->
+      <div class="px-5 py-2 flex items-center justify-between" style="border-bottom:1px solid var(--border)">
+        <p class="label">Similar Patents Found</p>
+        <span class="badge badge-info font-mono" x-text="result?result.matched_chunks.length+' hits':''"></span>
+      </div>
+      <div style="flex:1;overflow-y:auto">
+        <template x-for="(c,i) in (result?result.matched_chunks:[])" :key="i">
+          <div class="px-5 py-3" style="border-bottom:1px solid rgba(255,255,255,0.04)">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="font-mono text-xs font-semibold" style="color:#818cf8" x-text="c.patent_number"></span>
+              <div class="flex items-center gap-2">
+                <span class="badge badge-info" style="font-size:9px" x-text="c.section_type.replace('_',' ')"></span>
+                <span class="font-mono text-xs" style="color:var(--text3)" x-text="'RRF '+c.rrf_score.toFixed(4)"></span>
+              </div>
+            </div>
+            <p class="text-xs leading-relaxed" style="color:var(--text2)"
+               x-text="c.content.slice(0,240)+(c.content.length>240?'…':'')"></p>
+          </div>
+        </template>
+        <div x-show="!result||!result.matched_chunks||result.matched_chunks.length===0"
+             class="flex items-center justify-center py-10 text-sm" style="color:var(--text3)">
+          No similar patents found in corpus.
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: design arounds -->
+    <div class="card flex flex-col overflow-hidden" style="border-radius:16px">
+      <div class="px-5 py-3" style="border-bottom:1px solid var(--border)">
+        <p class="label">AI Manufacturing Recommendations</p>
+        <p class="text-xs mt-0.5" style="color:var(--text3)">Validated by Fuyao Auditor · Physical constraints enforced</p>
+      </div>
+      <div style="flex:1;overflow-y:auto">
+        <template x-for="(da,i) in (result?result.design_arounds:[])" :key="da.id">
+          <div class="px-5 py-5 fade-up" :style="`border-bottom:1px solid var(--border);animation-delay:${i*0.12}s`">
+            <div class="flex items-center gap-2.5 mb-3">
+              <span class="font-mono text-xs font-bold px-2 py-0.5 rounded"
+                    style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:#818cf8"
+                    x-text="da.id"></span>
+              <span class="badge" :class="da.audited?'badge-low':'badge-medium'">
+                <svg x-show="da.audited" width="9" height="9" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+                <span x-show="da.audited">Auditor Approved</span>
+                <span x-show="!da.audited">Unaudited</span>
+              </span>
+            </div>
+            <p class="text-sm text-white leading-relaxed mb-2.5" x-text="da.description"></p>
+            <p class="label mb-1">Rationale</p>
+            <p class="text-xs leading-relaxed" style="color:var(--text2)" x-text="da.rationale"></p>
+            <template x-if="da.audit_notes">
+              <div class="mt-3 px-3 py-2 rounded-lg text-xs" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.15)">
+                <span style="color:#34d399;font-weight:600">Audit: </span>
+                <span style="color:var(--text2)" x-text="da.audit_notes"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+        <div x-show="!result||!result.design_arounds||result.design_arounds.length===0"
+             class="flex flex-col items-center justify-center py-12 gap-3">
+          <p class="text-sm" style="color:var(--text3)">Recommendations will appear here after analysis.</p>
+          <a href="/compare" class="qlink">Compare patents first →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Empty CTA -->
+  <div x-show="!result&&!loading" class="grid grid-cols-3 gap-4">
+    <a href="/upload" class="card glow-card p-5 flex items-center gap-3 hover:border-indigo-500/30 transition-colors" style="text-decoration:none;border-radius:14px">
+      <div style="width:36px;height:36px;border-radius:10px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="#818cf8" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <p class="text-sm font-semibold text-white">Upload Patents</p>
+        <p class="text-xs mt-0.5" style="color:var(--text3)">Add new PDFs to corpus</p>
+      </div>
+    </a>
+    <a href="/summaries" class="card glow-card p-5 flex items-center gap-3 hover:border-cyan-500/30 transition-colors" style="text-decoration:none;border-radius:14px">
+      <div style="width:36px;height:36px;border-radius:10px;background:rgba(6,182,212,0.1);border:1px solid rgba(6,182,212,0.2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="#22d3ee" stroke-width="1.8"/><path d="M7 8h10M7 12h7" stroke="#22d3ee" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <p class="text-sm font-semibold text-white">Browse Library</p>
+        <p class="text-xs mt-0.5" style="color:var(--text3)">View indexed patents</p>
+      </div>
+    </a>
+    <a href="/compare" class="card glow-card p-5 flex items-center gap-3 hover:border-emerald-500/30 transition-colors" style="text-decoration:none;border-radius:14px">
+      <div style="width:36px;height:36px;border-radius:10px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M18 20V10M12 20V4M6 20v-6" stroke="#34d399" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <p class="text-sm font-semibold text-white">Compare Patents</p>
+        <p class="text-xs mt-0.5" style="color:var(--text3)">Side-by-side analysis</p>
+      </div>
+    </a>
+  </div>
+</div>
+
+  <!-- Quota / error banner -->
+  <div x-show="errorMsg" x-transition class="card p-4 flex items-start gap-3 mt-1" style="border-radius:12px;border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.06)">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:2px">
+      <circle cx="12" cy="12" r="10" stroke="#fbbf24" stroke-width="1.8"/>
+      <path d="M12 8v4M12 16h.01" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <p class="text-xs leading-relaxed" style="color:var(--text2)" x-text="errorMsg"></p>
+  </div>
+
+<script>
+function playgroundPage(){
+  return {
+    mode:'risk', loading:false, result:null, errorMsg:'', isQuotaError:false,
+    form:{ product_id:'', component_scope:'Automotive laminated windshield', specs:'', jurisdiction:'US' },
+    init(){},
+    reset(){ this.result=null; this.errorMsg=''; this.isQuotaError=false; this.form.specs=''; this.form.product_id=''; },
+    async runAnalysis(){
+      if(!this.form.specs||!this.form.product_id)return;
+      this.loading=true; this.result=null; this.errorMsg=''; this.isQuotaError=false;
+      try{
+        const r=await fetch('/api/v1/evaluate-design',{
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            product_id:this.form.product_id,
+            component_scope:this.form.component_scope,
+            proposed_specifications:this.form.specs,
+            jurisdiction:this.form.jurisdiction,
+          })
+        });
+        const data=await r.json();
+        if(!r.ok){
+          const detail=data.detail||'Unknown error';
+          this.isQuotaError=(r.status===429||detail.includes('QUOTA_EXHAUSTED'));
+          this.errorMsg=this.isQuotaError
+            ? 'Gemini free-tier quota exhausted. Create a new API key at aistudio.google.com/app/apikey under a new Google project, update GOOGLE_API_KEY in .env, and restart.'
+            : detail;
+          return;
+        }
+        this.result=data;
+      }catch(e){
+        this.errorMsg='Network error: '+e.message;
+      }finally{this.loading=false;}
+    }
+  }
+}
+</script>
+{% endblock %}

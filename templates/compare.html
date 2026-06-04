@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}Compare{% endblock %}
+{% block breadcrumb %}Patent Comparison{% endblock %}
+{% block content %}
+<div class="p-7 flex flex-col gap-6" x-data="comparePage()" x-init="init()">
+
+  <!-- Header -->
+  <div class="flex items-start justify-between">
+    <div>
+      <h1 class="font-display text-2xl font-bold text-white tracking-tight">Dual Patent Analysis</h1>
+      <p class="mt-1 text-sm" style="color:var(--text2)">Structural and semantic cross-comparison with AI-powered risk flagging.</p>
+    </div>
+    <a href="/playground" class="btn btn-secondary" style="text-decoration:none;font-size:12px">Try Playground ✦</a>
+  </div>
+
+  <!-- Selector row -->
+  <div class="card p-5 flex flex-col md:flex-row items-end gap-4" style="border-radius:16px">
+    <div class="flex-1 flex flex-col gap-1.5">
+      <p class="label">Patent A</p>
+      <select x-model="patentAId" class="px-3 py-2.5 text-sm w-full">
+        <option value="">— Select Patent A —</option>
+        {% for p in patents %}
+        <option value="{{ p.id }}">{{ p.patent_number }} — {{ p.title[:55] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="padding-bottom:6px;color:var(--text3)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M15 8l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="flex-1 flex flex-col gap-1.5">
+      <p class="label">Patent B</p>
+      <select x-model="patentBId" class="px-3 py-2.5 text-sm w-full">
+        <option value="">— Select Patent B —</option>
+        {% for p in patents %}
+        <option value="{{ p.id }}">{{ p.patent_number }} — {{ p.title[:55] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-primary flex-shrink-0" style="padding:10px 32px"
+            @click="runCompare()" :disabled="!patentAId||!patentBId||loading">
+      <span x-show="!loading" class="flex items-center gap-2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M18 20V10M12 20V4M6 20v-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        Run Analysis
+      </span>
+      <span x-show="loading" class="flex items-center gap-2">
+        <div class="spinner" style="width:14px;height:14px"></div>Analysing…
+      </span>
+    </button>
+  </div>
+
+  <!-- Results -->
+  <div x-show="result" x-transition class="flex flex-col gap-5">
+
+    <!-- Top row: score + patent cards -->
+    <div class="grid grid-cols-3 gap-4">
+
+      <!-- Radial score -->
+      <div class="card glow-card flex flex-col items-center justify-center p-6 gap-3" style="border-radius:16px">
+        <p class="label">Semantic Similarity</p>
+        <div style="position:relative;width:110px;height:110px">
+          <svg width="110" height="110" viewBox="0 0 110 110">
+            <defs>
+              <linearGradient id="radialGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" style="stop-color:#4f46e5"/>
+                <stop offset="100%" style="stop-color:#06b6d4"/>
+              </linearGradient>
+            </defs>
+            <circle cx="55" cy="55" r="44" fill="none" stroke-width="7" class="radial-track"/>
+            <circle cx="55" cy="55" r="44" fill="none" stroke-width="7" class="radial-fill"
+                    stroke-dasharray="276.5"
+                    :stroke-dashoffset="276.5-(276.5*(result?result.similarity_score/100:0))"
+                    transform="rotate(-90 55 55)"/>
+          </svg>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+            <span class="font-display font-bold text-white" style="font-size:24px" x-text="result?result.similarity_score+'%':'—'"></span>
+            <span class="label" style="font-size:9px">similarity</span>
+          </div>
+        </div>
+        <span class="badge text-sm"
+              :class="{
+                'badge-high':   result&&result.analysis.overall_risk==='HIGH',
+                'badge-medium': result&&result.analysis.overall_risk==='MEDIUM',
+                'badge-low':    result&&result.analysis.overall_risk==='LOW',
+                'badge-clear':  result&&result.analysis.overall_risk==='CLEAR',
+              }"
+              x-text="result?result.analysis.overall_risk+' RISK':''"></span>
+      </div>
+
+      <!-- Patent A -->
+      <div class="card p-5" style="border-radius:16px;border-top:3px solid #4f46e5">
+        <div class="flex items-center gap-2 mb-3">
+          <span style="width:22px;height:22px;border-radius:6px;background:#4f46e5;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">A</span>
+          <span class="font-mono text-xs" style="color:#818cf8" x-text="result?result.patent_a.patent_number:''"></span>
+        </div>
+        <p class="text-sm font-semibold text-white leading-tight mb-2" x-text="result?result.patent_a.title:''"></p>
+        <p class="text-xs" style="color:var(--text3)" x-text="result?(result.patent_a.assignee||'Unknown'):''"></p>
+        <div class="mt-3"><span class="badge badge-info font-mono" x-text="result?result.patent_a.jurisdiction:''"></span></div>
+      </div>
+
+      <!-- Patent B -->
+      <div class="card p-5" style="border-radius:16px;border-top:3px solid #06b6d4">
+        <div class="flex items-center gap-2 mb-3">
+          <span style="width:22px;height:22px;border-radius:6px;background:#06b6d4;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">B</span>
+          <span class="font-mono text-xs" style="color:#22d3ee" x-text="result?result.patent_b.patent_number:''"></span>
+        </div>
+        <p class="text-sm font-semibold text-white leading-tight mb-2" x-text="result?result.patent_b.title:''"></p>
+        <p class="text-xs" style="color:var(--text3)" x-text="result?(result.patent_b.assignee||'Unknown'):''"></p>
+        <div class="mt-3"><span class="badge badge-info font-mono" x-text="result?result.patent_b.jurisdiction:''"></span></div>
+      </div>
+    </div>
+
+    <!-- Summary + recommendation -->
+    <div class="card p-5" style="border-radius:14px">
+      <div class="grid grid-cols-2 gap-6">
+        <div>
+          <p class="label mb-2">Overlap Summary</p>
+          <p class="text-sm leading-relaxed" style="color:var(--text)" x-text="result?result.analysis.overlap_summary:''"></p>
+        </div>
+        <div>
+          <p class="label mb-2">Recommendation</p>
+          <p class="text-sm leading-relaxed" style="color:var(--text)" x-text="result?result.analysis.recommendation:''"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Two-column matrix -->
+    <div class="grid grid-cols-2 gap-4">
+
+      <!-- Claim overlap table -->
+      <div class="card overflow-hidden" style="border-radius:14px">
+        <div class="px-5 py-3" style="border-bottom:1px solid var(--border)">
+          <p class="label">Claim Overlap Matrix</p>
+        </div>
+        <div style="max-height:320px;overflow-y:auto">
+          <table>
+            <thead><tr><th>Patent A Claim</th><th>Patent B Claim</th><th>Type</th><th>Risk</th></tr></thead>
+            <tbody>
+              <template x-for="(r,i) in (result?result.analysis.overlapping_claims:[])" :key="i">
+                <tr>
+                  <td class="text-xs align-top" style="max-width:140px" x-text="r.claim_a"></td>
+                  <td class="text-xs align-top" style="max-width:140px" x-text="r.claim_b"></td>
+                  <td><span class="font-mono text-xs badge badge-info" x-text="r.overlap_type"></span></td>
+                  <td>
+                    <span class="badge"
+                          :class="{'badge-high':r.risk_level==='HIGH','badge-medium':r.risk_level==='MEDIUM','badge-low':r.risk_level==='LOW'}"
+                          x-text="r.risk_level"></span>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="!result||!result.analysis.overlapping_claims||result.analysis.overlapping_claims.length===0">
+                <td colspan="4" style="text-align:center;padding:24px;color:var(--text3)">No overlapping claims.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Differentiators -->
+      <div class="card p-5" style="border-radius:14px">
+        <p class="label mb-3">Differentiating Features</p>
+        <ul class="flex flex-col gap-2.5">
+          <template x-for="(f,i) in (result?result.analysis.differentiating_features:[])" :key="i">
+            <li class="flex gap-2.5 text-sm">
+              <span style="color:#34d399;flex-shrink:0;margin-top:2px">◆</span>
+              <span style="color:var(--text)" x-text="f"></span>
+            </li>
+          </template>
+          <li x-show="!result||!result.analysis.differentiating_features||result.analysis.differentiating_features.length===0"
+              class="text-sm" style="color:var(--text3)">Run analysis to see differentiating features.</li>
+        </ul>
+        <div class="mt-5 pt-4" style="border-top:1px solid var(--border)">
+          <p class="label mb-2">Continue Analysis</p>
+          <a href="/playground" class="btn btn-primary w-full" style="text-decoration:none;font-size:12px;justify-content:center">
+            Open in Design Playground ✦
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Empty CTA -->
+  <div x-show="!result && !loading && !errorMsg" class="card p-8 text-center" style="border-radius:16px;border-style:dashed">
+    <p class="text-sm mb-3" style="color:var(--text3)">Select two patents above and click Run Analysis to begin.</p>
+    <a href="/summaries" class="qlink" style="display:inline-flex">Browse Library &rarr;</a>
+  </div>
+
+  <!-- Quota / error banner -->
+  <div x-show="errorMsg" x-transition class="card p-5 flex flex-col gap-3" style="border-radius:14px;border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.06)">
+    <div class="flex items-center gap-3">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="flex-shrink:0">
+        <circle cx="12" cy="12" r="10" stroke="#fbbf24" stroke-width="1.8"/>
+        <path d="M12 8v4M12 16h.01" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <p class="text-sm font-semibold" style="color:#fbbf24" x-text="errorTitle"></p>
+    </div>
+    <p class="text-xs leading-relaxed" style="color:var(--text2)" x-text="errorMsg"></p>
+    <div x-show="isQuotaError" class="flex flex-col gap-2 pt-2" style="border-top:1px solid rgba(245,158,11,0.2)">
+      <p class="label" style="color:var(--text3)">How to fix this immediately:</p>
+      <p class="text-xs" style="color:var(--text2)">
+        1. Go to <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:#818cf8">aistudio.google.com/app/apikey</a>
+        and create a new API key under a <strong>different Google project</strong> — each project has its own independent free daily quota.<br/>
+        2. Update <code style="color:#22d3ee">GOOGLE_API_KEY</code> in your <code style="color:#22d3ee">.env</code> file.<br/>
+        3. Restart uvicorn. The new key works immediately.<br/>
+        <span style="color:var(--text3)">Or wait until midnight Pacific Time for the daily quota to reset.</span>
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+function comparePage(){
+  return {
+    patentAId:'', patentBId:'', loading:false, result:null,
+    errorMsg:'', errorTitle:'', isQuotaError:false,
+    init(){
+      const params=new URLSearchParams(window.location.search);
+      const a=params.get('a'); if(a) this.patentAId=a;
+    },
+    async runCompare(){
+      if(!this.patentAId||!this.patentBId)return;
+      this.loading=true; this.result=null; this.errorMsg=''; this.isQuotaError=false;
+      try{
+        const r=await fetch('/api/v1/compare',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({patent_id_a:this.patentAId,patent_id_b:this.patentBId})
+        });
+        const data=await r.json();
+        if(!r.ok){
+          const detail = data.detail || 'Unknown error';
+          if(r.status===429||detail.includes('QUOTA_EXHAUSTED')){
+            this.isQuotaError=true;
+            this.errorTitle='Gemini API Quota Exhausted';
+            this.errorMsg='The free-tier daily quota has been reached for all available Gemini models.';
+          } else {
+            this.errorTitle='Analysis Error ('+r.status+')';
+            this.errorMsg=detail;
+          }
+          return;
+        }
+        this.result=data;
+      }catch(e){
+        this.errorTitle='Network Error';
+        this.errorMsg=e.message;
+      }finally{this.loading=false;}
+    }
+  }
+}
+</script>
+{% endblock %}

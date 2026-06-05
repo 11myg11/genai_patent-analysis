@@ -128,6 +128,29 @@
             </div>
           </div>
 
+          <!-- Patent Figures -->
+          <div x-show="images.length > 0" class="card overflow-hidden" style="border-radius:14px">
+            <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border)">
+              <p class="label">Patent Figures</p>
+              <span class="badge badge-info font-mono" x-text="images.length+' figure'+(images.length===1?'':'s')"></span>
+            </div>
+            <div style="overflow-x:auto;padding:16px">
+              <div style="display:flex;gap:16px;min-width:max-content">
+                <template x-for="img in images" :key="img.id">
+                  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0">
+                    <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fff;width:220px;height:160px;display:flex;align-items:center;justify-content:center">
+                      <img :src="'/api/v1/images/'+img.id"
+                           :alt="'Page '+img.page_number"
+                           style="max-width:218px;max-height:158px;object-fit:contain;display:block"
+                           loading="lazy"/>
+                    </div>
+                    <span class="font-mono text-xs" style="color:var(--text3)" x-text="'p. '+img.page_number"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
           <!-- Chunks table -->
           <div class="card overflow-hidden" style="border-radius:14px">
             <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border)">
@@ -167,7 +190,7 @@
 function summariesPage(){
   return {
     allPatents:{{ patents|tojson }}, filtered:[], selected:null,
-    search:'', filterJX:'', summary:null, chunks:[], summaryLoading:false,
+    search:'', filterJX:'', summary:null, chunks:[], images:[], summaryLoading:false,
     init(){ this.filtered=[...this.allPatents]; },
     filterPatents(){
       const q=this.search.toLowerCase();
@@ -176,8 +199,15 @@ function summariesPage(){
         (!this.filterJX||p.jurisdiction===this.filterJX));
     },
     async selectPatent(p){
-      this.selected=p; this.summary=null; this.chunks=[];
-      try{ const r=await fetch(`/api/v1/patents/${p.id}`); const d=await r.json(); this.chunks=d.chunks||[]; }catch(e){}
+      this.selected=p; this.summary=null; this.chunks=[]; this.images=[];
+      try{
+        const [cr, ir] = await Promise.all([
+          fetch(`/api/v1/patents/${p.id}`),
+          fetch(`/api/v1/patents/${p.id}/images`),
+        ]);
+        const cd=await cr.json(); this.chunks=cd.chunks||[];
+        this.images=await ir.json();
+      }catch(e){}
     },
     async loadSummary(){
       if(!this.selected)return; this.summaryLoading=true;

@@ -21,8 +21,12 @@ Key constants:
 """
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
 
 _ROOT = Path(__file__).parent.parent
+
+load_dotenv(_ROOT / ".env")
+load_dotenv(_ROOT / ".env.txt", override=False)
 
 
 class Settings(BaseSettings):
@@ -50,6 +54,13 @@ PAGE_DPI = 150
 MIN_NATIVE_CHARS = 50
 TRANSLATE_CHUNK_LIMIT = 4500
 META_EXTRACT_PAGES = 3
+
+# Figure extraction — pages whose text is below FIGURE_TEXT_THRESHOLD (in UTF-8 bytes,
+# not code points) are treated as drawing pages and rendered as PNG. Using byte length
+# makes the threshold script-agnostic: a Chinese character is 3 bytes, so 67 CJK
+# characters already exceed 200 bytes and will not be mistaken for figure pages.
+FIGURE_DPI = 100
+FIGURE_TEXT_THRESHOLD = 200
 
 # Glass domain hard limits (Fuyao manufacturing constraints)
 PVB_MIN_MM = 0.38

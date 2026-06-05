@@ -31,7 +31,7 @@ import fitz
 from app.config import BATCH_SIZE, META_EXTRACT_PAGES, UPLOAD_DIR
 from app.services.llm import llm_json
 from app.utils.metadata import extract_metadata
-from app.utils.pdf import extract_page_text, split_into_chunks
+from app.utils.pdf import extract_page_text, extract_figure_pages, split_into_chunks
 from app.utils.translation import detect_language, translate_chunks, translate_to_english
 
 log = logging.getLogger(__name__)
@@ -171,12 +171,34 @@ def ingest_pdf(
                     "check: migration_v2.sql applied, RLS disabled on patent_chunks", i
                 )
 
-        log.info("Ingest complete: patent=%s chunks=%d lang=%s translated=%s",
-                 final_number, total, src_lang, not is_english)
+        # Extract figure pages and store as PNG in patent_images.
+        # PostgREST requires bytea to be sent as a \x-prefixed hex string.
+        figures = extract_figure_pages(doc)
+        images_inserted = 0
+        if figures:
+            image_records = [
+                {
+                    "patent_id":   patent_id,
+                    "page_number": fig["page_number"],
+                    "width":       fig["width"],
+                    "height":      fig["height"],
+                    "image_data":  "\\x" + fig["image_data"].hex(),
+                }
+                for fig in figures
+            ]
+            for i in range(0, len(image_records), BATCH_SIZE):
+                batch = image_records[i: i + BATCH_SIZE]
+                resp = supabase.table("patent_images").insert(batch).execute()
+                images_inserted += len(resp.data) if resp.data else 0
+            log.info("Stored %d figure images for patent=%s", images_inserted, final_number)
+
+        log.info("Ingest complete: patent=%s chunks=%d images=%d lang=%s translated=%s",
+                 final_number, total, images_inserted, src_lang, not is_english)
 
         return {
             "patent_id":       patent_id,
             "chunks_inserted": total,
+            "images_inserted": images_inserted,
             "patent_number":   final_number,
             "language":        src_lang,
             "translated":      not is_english,

@@ -1,8 +1,8 @@
 """
-app/utils/pdf.py — PDF text extraction, OCR fallback, and paragraph chunking.
+app/utils/pdf.py — PDF text extraction, OCR fallback, paragraph chunking, and figure extraction.
 
-Handles the full pipeline from a fitz.Page object to a list of labelled text chunks
-ready for embedding. Used exclusively by app/services/ingest.py.
+Handles the full pipeline from a fitz.Page object to labelled text chunks and figure images
+ready for storage. Used exclusively by app/services/ingest.py.
 
 Global variables:
   CLAIM_INDEP_RE / CLAIM_DEP_RE / CLAIM_NUM_RE — Pre-compiled regexes for classifying
@@ -24,6 +24,13 @@ Functions:
     Splits a page's full text on double newlines into labelled paragraphs.
     Short paragraphs (< 80 chars) are merged into the previous one to avoid
     fragmenting numbered list items. Chunks shorter than 10 chars are dropped.
+
+  extract_figure_pages(doc) -> list[dict]
+    Iterates all pages in the document and renders qualifying pages as PNG images.
+    A page qualifies as a figure page if it has embedded images OR its text content
+    is below FIGURE_TEXT_THRESHOLD (200 chars) — the latter catches vector drawings
+    which page.get_images() cannot detect. Returns dicts with page_number, width,
+    height, and image_data (PNG bytes).
 """
 import logging
 import re
@@ -32,7 +39,7 @@ from typing import Dict, List
 import fitz
 import numpy as np
 
-from app.config import PAGE_DPI, MIN_NATIVE_CHARS
+from app.config import PAGE_DPI, MIN_NATIVE_CHARS, FIGURE_DPI, FIGURE_TEXT_THRESHOLD
 
 log = logging.getLogger(__name__)
 
@@ -116,3 +123,40 @@ def split_into_chunks(full_text: str) -> List[Dict[str, str]]:
     if buffer:
         chunks.append({"section_type": determine_section_type(buffer), "content": buffer})
     return [c for c in chunks if len(c["content"]) >= 10]
+
+
+def extract_figure_pages(doc: fitz.Document) -> List[Dict]:
+    """Render qualifying pages as PNG and return their raw bytes.
+
+    A page qualifies if it has embedded images (raster figures) OR if its text
+    content is below FIGURE_TEXT_THRESHOLD, which catches pages that consist
+    entirely of vector drawings — those are invisible to page.get_images().
+    """
+    figures: List[Dict] = []
+    mat = fitz.Matrix(FIGURE_DPI / 72, FIGURE_DPI / 72)
+
+    for page_num in range(len(doc)):
+        try:
+            page = doc[page_num]
+            has_images = len(page.get_images(full=True)) > 0
+            # Byte length (not code-point length) so CJK characters (3 bytes each)
+            # are weighted correctly — a 70-char Chinese paragraph is ~210 bytes,
+            # safely above the 200-byte threshold that filters out figure labels.
+            text_len = len(page.get_text("text").strip().encode("utf-8"))
+            is_figure_page = has_images or text_len < FIGURE_TEXT_THRESHOLD
+            if not is_figure_page:
+                continue
+
+            pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+            image_bytes = pix.tobytes("png")
+            figures.append({
+                "page_number": page_num + 1,  # 1-based for display
+                "width":       pix.width,
+                "height":      pix.height,
+                "image_data":  image_bytes,
+            })
+            log.debug("Figure page %d: %dx%d %d bytes", page_num + 1, pix.width, pix.height, len(image_bytes))
+        except Exception as exc:
+            log.warning("Figure extraction failed on page %d: %s", page_num + 1, exc)
+
+    return figures

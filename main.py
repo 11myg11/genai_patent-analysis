@@ -44,9 +44,9 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not settings.supabase_url or not settings.supabase_anon_key:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env")
+        raise RuntimeError("SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env or .env.txt")
     if not settings.openrouter_api_key:
-        raise RuntimeError("OPENROUTER_API_KEY must be set in .env")
+        raise RuntimeError("OPENROUTER_API_KEY must be set in .env or .env.txt")
 
     log.info("Startup: loading embedding model %s…", EMBEDDING_MODEL)
     state.embed_model = SentenceTransformer(EMBEDDING_MODEL)

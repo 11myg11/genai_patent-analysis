@@ -12,6 +12,8 @@ Endpoints:
   GET  /api/v1/patents                  → list all patents (optional ?jurisdiction= ?assignee= filters)
   GET  /api/v1/patents/{patent_id}      → single patent with all its chunks
   GET  /api/v1/patents/{patent_id}/summary → LLM-generated one-page patent summary
+  GET  /api/v1/patents/{patent_id}/images → list figure metadata (id, page_number) — no binary data
+  GET  /api/v1/images/{image_id}          → stream a single figure as image/png
   POST /api/v1/compare                  → compare two patents: overlap analysis + similarity score
   POST /api/v1/evaluate-design          → core IP risk assessment + audited design-around proposals
 
@@ -27,7 +29,7 @@ from typing import Optional
 import fitz
 import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.config import settings
 from app.models import (
@@ -211,6 +213,56 @@ CONTENT:
         }
 
     return {"document": doc, "summary": summary, "chunk_count": len(chunks)}
+
+
+@router.get("/api/v1/patents/{patent_id}/images")
+async def list_patent_images(patent_id: str):
+    """Return metadata (id + page_number) for all stored figures of a patent.
+    Binary data is NOT included — use GET /api/v1/images/{image_id} to fetch each image.
+    """
+    try:
+        resp = await asyncio.to_thread(
+            lambda: (
+                state.supabase.table("patent_images")
+                .select("id,page_number,width,height")
+                .eq("patent_id", patent_id)
+                .order("page_number")
+                .execute()
+            )
+        )
+        return resp.data or []
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/api/v1/images/{image_id}")
+async def serve_patent_image(image_id: str):
+    """Stream a single figure as a PNG image.
+    PostgREST returns bytea columns as \\x-prefixed hex strings; we decode here.
+    """
+    try:
+        resp = await asyncio.to_thread(
+            lambda: (
+                state.supabase.table("patent_images")
+                .select("image_data")
+                .eq("id", image_id)
+                .single()
+                .execute()
+            )
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Image not found: {exc}") from exc
+
+    raw = resp.data.get("image_data", "")
+    # PostgREST hex format: "\x89504e47..." — strip the leading \x before decoding
+    if isinstance(raw, str) and raw.startswith("\\x"):
+        image_bytes = bytes.fromhex(raw[2:])
+    elif isinstance(raw, (bytes, bytearray)):
+        image_bytes = bytes(raw)
+    else:
+        raise HTTPException(status_code=500, detail="Unexpected image_data format from database")
+
+    return Response(content=image_bytes, media_type="image/png")
 
 
 @router.post("/api/v1/compare")

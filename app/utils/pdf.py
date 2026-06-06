@@ -4,16 +4,19 @@ app/utils/pdf.py — PDF text extraction, OCR fallback, paragraph chunking, and 
 Handles the full pipeline from a fitz.Page object to labelled text chunks and figure images
 ready for storage. Used exclusively by app/services/ingest.py.
 
+OCR backend: pytesseract (wraps system Tesseract). Install with:
+  brew install tesseract && pip install pytesseract
+For non-English patents install the matching language pack, e.g.:
+  brew install tesseract-lang   (all languages)
+
 Global variables:
   CLAIM_INDEP_RE / CLAIM_DEP_RE / CLAIM_NUM_RE — Pre-compiled regexes for classifying
     a paragraph as an independent claim, dependent claim, or description section.
-  _ocr_engines — Dict of lazy-loaded PaddleOCR singletons keyed by language ("en"/"ch").
-    OCR is expensive to initialise; singletons avoid reloading per page.
 
 Functions:
   extract_page_text(page, src_lang) -> str
     Extracts text from a fitz.Page. Uses native PyMuPDF text first; falls back to
-    PaddleOCR if the native result is shorter than MIN_NATIVE_CHARS (50 chars),
+    Tesseract OCR if the native result is shorter than MIN_NATIVE_CHARS (50 chars),
     which indicates a scanned/image-only page.
 
   determine_section_type(text) -> str
@@ -33,15 +36,32 @@ Functions:
     height, and image_data (PNG bytes).
 """
 import logging
+import os
 import re
-from typing import Dict, List
+import shutil
+from pathlib import Path
+from typing import Dict, List, Optional
 
 import fitz
-import numpy as np
 
 from app.config import PAGE_DPI, MIN_NATIVE_CHARS, FIGURE_DPI, FIGURE_TEXT_THRESHOLD
 
 log = logging.getLogger(__name__)
+
+# Resolve tessdata once at import time so every _ocr_page call can pass it explicitly.
+# PyMuPDF 1.23.x raises "TESSDATA_PREFIX not set" without this; 1.24+ auto-discovers it.
+def _find_tessdata() -> Optional[str]:
+    # Honour explicit env var first
+    if os.environ.get("TESSDATA_PREFIX"):
+        return os.environ["TESSDATA_PREFIX"]
+    tess_bin = shutil.which("tesseract")
+    if tess_bin:
+        candidate = Path(tess_bin).parent.parent / "share" / "tessdata"
+        if candidate.is_dir():
+            return str(candidate)
+    return None
+
+_TESSDATA: Optional[str] = _find_tessdata()
 
 CLAIM_INDEP_RE = re.compile(r"^\s*1\.\s", re.IGNORECASE)
 CLAIM_DEP_RE = re.compile(
@@ -51,36 +71,30 @@ CLAIM_DEP_RE = re.compile(
 )
 CLAIM_NUM_RE = re.compile(r"^\s*\d{1,3}\.\s")
 
-# OCR engine singletons keyed by language — lazy-initialised on first use
-_ocr_engines: Dict[str, object] = {}
-
-
-def _get_ocr_engine(lang: str = "en"):
-    if lang not in _ocr_engines:
-        log.info("Initialising PaddleOCR engine (lang=%s)…", lang)
-        from paddleocr import PaddleOCR
-        _ocr_engines[lang] = PaddleOCR(use_angle_cls=True, lang=lang, show_log=False)
-    return _ocr_engines[lang]
+# Map ISO 639-1 codes → Tesseract language codes (only non-obvious ones needed)
+_TESS_LANG: Dict[str, str] = {
+    "zh": "chi_sim",
+    "ja": "jpn",
+    "ko": "kor",
+    "de": "deu",
+    "fr": "fra",
+    "es": "spa",
+    "ru": "rus",
+    "nl": "nld",
+    "pt": "por",
+    "it": "ita",
+}
 
 
 def _ocr_page(page: fitz.Page, src_lang: str = "en") -> str:
-    import cv2
-    ocr_lang = "ch" if src_lang == "zh" else "en"
-    mat = fitz.Matrix(PAGE_DPI / 72, PAGE_DPI / 72)
-    pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
-    img_arr = np.frombuffer(pix.tobytes("png"), dtype=np.uint8)
-    img = cv2.imdecode(img_arr, cv2.IMREAD_COLOR)
-    result = _get_ocr_engine(ocr_lang).ocr(img, cls=True)
-    lines: List[str] = []
-    if result:
-        for block in result:
-            if block:
-                for line in block:
-                    if isinstance(line, (list, tuple)) and len(line) >= 2:
-                        tc = line[1]
-                        if isinstance(tc, (list, tuple)) and tc:
-                            lines.append(str(tc[0]))
-    return " ".join(lines)
+    """Run Tesseract OCR via PyMuPDF's built-in get_textpage_ocr.
+
+    Passes tessdata path explicitly — required by PyMuPDF <=1.23.x which raises
+    'TESSDATA_PREFIX not set' without it. Harmless on newer versions.
+    """
+    tess_lang = _TESS_LANG.get(src_lang.split("-")[0], "eng")
+    tp = page.get_textpage_ocr(language=tess_lang, dpi=PAGE_DPI, full=True, tessdata=_TESSDATA)
+    return page.get_text(textpage=tp).strip()
 
 
 def extract_page_text(page: fitz.Page, src_lang: str = "en") -> str:

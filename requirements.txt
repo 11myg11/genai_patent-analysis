@@ -2,9 +2,8 @@ fastapi==0.110.0
 uvicorn==0.28.0
 supabase>=2.9.0
 sentence-transformers==2.5.1
-paddleocr==2.7.3
-pymupdf==1.23.26
-opencv-python-headless==4.9.0.80
+Pillow>=10.0.0
+pymupdf>=1.19.0
 pydantic==2.6.4
 pydantic-settings>=2.0.0
 numpy==1.26.4

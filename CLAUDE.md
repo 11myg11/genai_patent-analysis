@@ -132,9 +132,14 @@ uvicorn app.main:app --reload
 
 CLI ingestion:
 ```bash
+# Single file
 python scripts/ingest_patents.py --pdf path/to/patent.pdf
-# currently:
-python ingest_patents.py --pdf path/to/patent.pdf
+
+# Directory batch
+python scripts/ingest_patents.py --dir path/to/folder/
+
+# Directory batch, skip already-ingested patents
+python scripts/ingest_patents.py --dir path/to/folder/ --skip-existing
 ```
 
 ---

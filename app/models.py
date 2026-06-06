@@ -51,3 +51,11 @@ class CompareRequest(BaseModel):
     patent_id_a:  str
     patent_id_b:  str
     jurisdiction: str = "US"
+
+
+class PatentUpdateRequest(BaseModel):
+    patent_number:    Optional[str] = None
+    title:            Optional[str] = None
+    assignee:         Optional[str] = None
+    jurisdiction:     Optional[str] = None
+    publication_date: Optional[str] = None

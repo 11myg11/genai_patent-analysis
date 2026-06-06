@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
   <style>
+    [x-cloak] { display: none !important; }
     :root {
       --bg:        #080c14;
       --bg2:       #0d1320;
@@ -354,7 +355,7 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
           <path d="M18 20V10M12 20V4M6 20v-6"/>
         </svg>
-        <span>Compare</span>
+        <span>Risk Analysis</span>
         <span class="nav-dot"></span>
       </a>
 
@@ -363,7 +364,7 @@
           <circle cx="12" cy="12" r="3"/>
           <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
         </svg>
-        <span>Playground</span>
+        <span>Innovation Opportunities</span>
         <span class="nav-dot"></span>
       </a>
 
@@ -405,8 +406,8 @@
         {% for label, href, icon in [
           ('Upload','/upload','↑'),
           ('Summaries','/summaries','≡'),
-          ('Compare','/compare','⇄'),
-          ('Playground','/playground','✦')
+          ('Risk Analysis','/compare','⇄'),
+          ('Innovation Opportunities','/playground','✦')
         ] %}
         {% if href != page %}
         <a href="{{ href }}" class="qlink">{{ icon }} {{ label }}</a>

@@ -2,32 +2,68 @@
 {% block title %}Summaries{% endblock %}
 {% block breadcrumb %}Patent Library{% endblock %}
 {% block content %}
-<div class="flex h-full" style="height:calc(100vh - 56px)" x-data="summariesPage()" x-init="init()">
+<style>
+  .patent-item { position:relative; }
+  .patent-actions { opacity:0; transition:opacity 0.15s; position:absolute; top:8px; right:8px; display:flex; gap:4px; }
+  .patent-item:hover .patent-actions { opacity:1; }
+  .action-icon { width:26px; height:26px; border-radius:6px; border:1px solid var(--border2); background:var(--surface2); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background 0.15s; }
+  .action-icon:hover { background:var(--surface); }
+  .action-icon.danger:hover { background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3); }
+  .fn-btn { display:flex; align-items:center; gap:9px; border-radius:9px; padding:9px 11px; border:1px solid rgba(99,102,241,0.18); background:rgba(99,102,241,0.06); cursor:pointer; text-align:left; transition:background 0.15s; width:100%; }
+  .fn-btn:hover { background:rgba(99,102,241,0.13); }
+  .fn-btn.disabled { opacity:0.38; cursor:not-allowed; }
+  .fn-btn.disabled:hover { background:rgba(99,102,241,0.06); }
+  .fn-btn .fi { width:28px; height:28px; border-radius:7px; background:rgba(99,102,241,0.2); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .fn-btn .fl { font-size:11px; font-weight:600; color:var(--text); line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .fn-btn .fs { font-size:9px; color:var(--text3); margin-top:1px; white-space:nowrap; }
+  .fn-btn.manage { border-color:var(--border2); background:var(--surface2); }
+  .fn-btn.manage:hover { background:var(--surface); }
+  .fn-btn.manage .fi { background:rgba(255,255,255,0.08); }
+  .fn-btn.danger-btn { border-color:rgba(239,68,68,0.22); background:rgba(239,68,68,0.07); }
+  .fn-btn.danger-btn:hover { background:rgba(239,68,68,0.13); }
+  .fn-btn.danger-btn .fi { background:rgba(239,68,68,0.18); }
+  .fn-btn.danger-btn .fl { color:#f87171; }
+</style>
 
-  <!-- Sidebar panel -->
+<div x-data="summariesPage()" x-init="init()">
+
+<div class="flex" style="height:calc(100vh - 56px)">
+
+  <!-- Sidebar -->
   <div class="flex flex-col" style="width:280px;flex-shrink:0;border-right:1px solid var(--border);height:100%">
     <div class="p-4" style="border-bottom:1px solid var(--border)">
       <p class="label mb-3">Patent Library <span class="badge badge-info" style="margin-left:6px;font-size:10px" x-text="filtered.length"></span></p>
       <input type="text" x-model="search" @input="filterPatents()" placeholder="Search patents…" class="w-full px-3 py-2 text-sm mb-2"/>
       <select x-model="filterJX" @change="filterPatents()" class="w-full px-3 py-2 text-sm">
         <option value="">All Jurisdictions</option>
-        <option value="US">US</option><option value="EP">EP</option><option value="CN">CN</option>
+        <option>US</option><option>EP</option><option>CN</option>
+        <option>JP</option><option>KR</option><option>WO</option>
       </select>
     </div>
     <div style="flex:1;overflow-y:auto">
       <template x-for="p in filtered" :key="p.id">
-        <button @click="selectPatent(p)" class="w-full text-left px-4 py-3 transition-all duration-150"
-                style="border-bottom:1px solid var(--border);background:transparent"
-                :style="selected&&selected.id===p.id ? 'background:rgba(99,102,241,0.08);border-left:2px solid #6366f1' : 'border-left:2px solid transparent'"
-                @mouseenter="$el.style.background='rgba(255,255,255,0.03)'"
-                @mouseleave="$el.style.background=selected&&selected.id===p.id?'rgba(99,102,241,0.08)':'transparent'">
-          <div class="flex items-center justify-between gap-2 mb-1">
-            <span class="font-mono text-xs font-medium" style="color:#818cf8" x-text="p.patent_number"></span>
-            <span class="badge badge-info" style="font-size:9px" x-text="p.jurisdiction"></span>
+        <div class="patent-item" style="border-bottom:1px solid var(--border)">
+          <button @click="selectPatent(p)" class="w-full text-left px-4 py-3"
+                  style="background:transparent;border:none;border-left:2px solid transparent;display:block;width:100%;transition:background 0.15s"
+                  :style="selected&&selected.id===p.id ? 'background:rgba(99,102,241,0.08);border-left-color:#6366f1' : ''"
+                  @mouseenter="if(!(selected&&selected.id===p.id)) $el.style.background='rgba(255,255,255,0.03)'"
+                  @mouseleave="$el.style.background=selected&&selected.id===p.id?'rgba(99,102,241,0.08)':'transparent'">
+            <div class="flex items-center gap-2 mb-1" style="padding-right:54px">
+              <span class="font-mono text-xs font-semibold" style="color:#818cf8" x-text="p.patent_number"></span>
+              <span class="badge badge-info" style="font-size:9px" x-text="p.jurisdiction"></span>
+            </div>
+            <p class="text-xs leading-snug" style="color:var(--text);padding-right:54px" x-text="p.title.slice(0,55)+(p.title.length>55?'…':'')"></p>
+            <p class="text-xs mt-1" style="color:var(--text3)" x-text="p.assignee||'Unknown assignee'"></p>
+          </button>
+          <div class="patent-actions">
+            <button class="action-icon" title="Edit" @click.stop="selectPatent(p); $nextTick(()=>startEditFor(p))">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="var(--text2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="var(--text2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="action-icon danger" title="Delete" @click.stop="confirmDeleteFor(p)">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><polyline points="3 6 5 6 21 6" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6M14 11v6" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
           </div>
-          <p class="text-xs leading-snug" style="color:var(--text)" x-text="p.title.slice(0,60)+(p.title.length>60?'…':'')"></p>
-          <p class="text-xs mt-1" style="color:var(--text3)" x-text="p.assignee||'Unknown assignee'"></p>
-        </button>
+        </div>
       </template>
       <div x-show="filtered.length===0" class="p-6 text-center text-sm" style="color:var(--text3)">
         No patents match.<br/><a href="/upload" style="color:#818cf8;text-decoration:none">Upload one →</a>
@@ -38,79 +74,103 @@
   <!-- Main panel -->
   <div class="flex flex-col flex-1 min-w-0" style="height:100%;overflow:hidden">
 
-    <!-- Empty -->
+    <!-- Empty state -->
     <div x-show="!selected" class="flex flex-col items-center justify-center h-full gap-4" style="color:var(--text3)">
       <div style="width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,0.04);border:1px solid var(--border);display:flex;align-items:center;justify-content:center">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M7 8h10M7 12h7M7 16h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </div>
-      <p class="text-sm">Select a patent from the sidebar to view its summary</p>
+      <p class="text-sm">Select a patent from the sidebar to view its details</p>
+      <p class="text-xs" style="color:var(--text3)">Hover over a patent to reveal edit and delete actions</p>
       <a href="/upload" class="btn btn-secondary" style="text-decoration:none;font-size:12px">+ Upload New Patent</a>
     </div>
 
-    <!-- Detail -->
+    <!-- Detail view -->
     <div x-show="selected" style="flex:1;overflow-y:auto;padding:28px" class="flex flex-col gap-5">
       <template x-if="selected">
         <div class="fade-up flex flex-col gap-5">
 
-          <!-- Metadata row -->
-          <div class="grid grid-cols-4 gap-3">
-            <div class="card p-4" style="border-radius:12px">
-              <p class="label mb-1.5">Patent No.</p>
-              <p class="font-mono text-sm font-semibold" style="color:#818cf8" x-text="selected.patent_number"></p>
-            </div>
-            <div class="card p-4" style="border-radius:12px">
-              <p class="label mb-1.5">Jurisdiction</p>
-              <span class="badge badge-info" x-text="selected.jurisdiction"></span>
-            </div>
-            <div class="card p-4" style="border-radius:12px">
-              <p class="label mb-1.5">Assignee</p>
-              <p class="text-sm text-white" x-text="selected.assignee||'—'"></p>
-            </div>
-            <div class="card p-4" style="border-radius:12px">
-              <p class="label mb-1.5">Published</p>
-              <p class="font-mono text-sm" x-text="selected.publication_date||'—'"></p>
+          <!-- Functionality toolbar — at top, hidden while editing -->
+          <div x-show="!editing" class="card" style="border-radius:14px;padding:12px 14px">
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px">
+              <button class="fn-btn" @click="loadSummary()" :disabled="summaryLoading" :class="summaryLoading?'disabled':''">
+                <div class="fi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" fill="#818cf8"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4" stroke="#818cf8" stroke-width="2" stroke-linecap="round"/></svg></div>
+                <div><div class="fl" x-text="summaryLoading?'Analysing…':'Generate Summary'"></div><div class="fs">AI brief + claims</div></div>
+              </button>
+              <button class="fn-btn" @click="reIngest()">
+                <div class="fi" style="background:rgba(6,182,212,0.18)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M1 4v6h6" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.51 15a9 9 0 1 0 .49-4.55" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div><div class="fl" style="color:#06b6d4">Restart Analysis</div><div class="fs">Re-run ingestion</div></div>
+              </button>
+              <a :href="'/compare?a='+selected.id" class="fn-btn" style="text-decoration:none">
+                <div class="fi" style="background:rgba(239,68,68,0.18)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="9" x2="12" y2="13" stroke="#f87171" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="17" x2="12.01" y2="17" stroke="#f87171" stroke-width="2" stroke-linecap="round"/></svg></div>
+                <div><div class="fl" style="color:#f87171">Risk Analysis</div><div class="fs">Infringement + overlap</div></div>
+              </a>
+              <button class="fn-btn disabled" disabled>
+                <div class="fi" style="background:rgba(16,185,129,0.16)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 20h9" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div><div class="fl" style="color:#10b981">Design Improvements</div><div class="fs">Coming soon</div></div>
+              </button>
+              <a href="/playground" class="fn-btn" style="text-decoration:none">
+                <div class="fi" style="background:rgba(245,158,11,0.18)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 18h6M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26A7 7 0 0 1 5 9a7 7 0 0 1 7-7z" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div><div class="fl" style="color:#f59e0b">Innovation Opps.</div><div class="fs">Design-around ideas</div></div>
+              </a>
+              <button class="fn-btn manage" @click="startEditFor(selected)">
+                <div class="fi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="var(--text2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="var(--text2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div><div class="fl">Edit</div></div>
+              </button>
+              <button class="fn-btn danger-btn" @click="confirmDeleteFor(selected)">
+                <div class="fi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><polyline points="3 6 5 6 21 6" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6M14 11v6" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div><div class="fl">Delete</div></div>
+              </button>
             </div>
           </div>
 
-          <!-- Title + actions -->
-          <div class="card p-5 flex items-center gap-4" style="border-radius:14px">
-            <div class="flex-1">
-              <p class="label mb-1">Title</p>
-              <h2 class="font-display text-xl font-bold text-white leading-tight" x-text="selected.title"></h2>
+          <!-- Metadata cards (view mode) -->
+          <div x-show="!editing" class="grid grid-cols-4 gap-3">
+            <div class="card p-4" style="border-radius:12px"><p class="label mb-1.5">Patent No.</p><p class="font-mono text-sm font-semibold" style="color:#818cf8" x-text="selected.patent_number"></p></div>
+            <div class="card p-4" style="border-radius:12px"><p class="label mb-1.5">Jurisdiction</p><span class="badge badge-info" x-text="selected.jurisdiction"></span></div>
+            <div class="card p-4" style="border-radius:12px"><p class="label mb-1.5">Assignee</p><p class="text-sm text-white" x-text="selected.assignee||'—'"></p></div>
+            <div class="card p-4" style="border-radius:12px"><p class="label mb-1.5">Published</p><p class="font-mono text-sm" x-text="selected.publication_date||'—'"></p></div>
+          </div>
+
+          <!-- Edit form -->
+          <div x-show="editing" class="card p-5 flex flex-col gap-4" style="border-radius:14px">
+            <p class="label">Edit Metadata</p>
+            <div class="grid grid-cols-2 gap-3">
+              <div><p class="label mb-1.5">Patent No.</p><input class="w-full px-3 py-2 text-sm" x-model="editForm.patent_number"/></div>
+              <div><p class="label mb-1.5">Jurisdiction</p>
+                <select class="w-full px-3 py-2 text-sm" x-model="editForm.jurisdiction">
+                  <option>US</option><option>EP</option><option>CN</option><option>JP</option><option>KR</option><option>WO</option><option>DE</option><option>GB</option>
+                </select>
+              </div>
+              <div><p class="label mb-1.5">Assignee</p><input class="w-full px-3 py-2 text-sm" x-model="editForm.assignee"/></div>
+              <div><p class="label mb-1.5">Published (YYYY-MM-DD)</p><input class="w-full px-3 py-2 text-sm" placeholder="YYYY-MM-DD" x-model="editForm.publication_date"/></div>
+              <div class="col-span-2"><p class="label mb-1.5">Title</p><input class="w-full px-3 py-2 text-sm" x-model="editForm.title"/></div>
             </div>
-            <div class="flex gap-2 flex-shrink-0">
-              <button class="btn btn-primary" @click="loadSummary()" :disabled="summaryLoading">
-                <span x-show="!summaryLoading" class="flex items-center gap-1.5">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                  Generate Summary
-                </span>
-                <span x-show="summaryLoading" class="flex items-center gap-1.5">
-                  <div class="spinner" style="width:12px;height:12px"></div>Analysing…
-                </span>
+            <div class="flex items-center gap-2">
+              <button class="btn btn-primary" @click="saveEdit()" :disabled="saving">
+                <span x-show="!saving">Save Changes</span>
+                <span x-show="saving" class="flex items-center gap-1.5"><div class="spinner" style="width:12px;height:12px"></div>Saving…</span>
               </button>
-              <a :href="'/compare?a='+selected.id" class="btn btn-secondary" style="text-decoration:none;font-size:12px">Compare →</a>
+              <button class="btn btn-secondary" @click="cancelEdit()">Cancel</button>
+              <span x-show="editError" class="text-xs" style="color:#f87171" x-text="editError"></span>
             </div>
+          </div>
+
+          <!-- Title card -->
+          <div class="card p-5" style="border-radius:14px">
+            <p class="label mb-1">Title</p>
+            <h2 class="font-display text-xl font-bold text-white leading-tight" x-text="selected.title"></h2>
           </div>
 
           <!-- LLM Summary -->
           <div x-show="summary" x-transition class="card p-5 flex flex-col gap-4" style="border-radius:14px">
-            <div class="flex items-center gap-3 mb-1">
-              <p class="label">AI Technical Brief</p>
-              <span class="badge badge-low" style="font-size:9px">Gemini Verified</span>
-            </div>
+            <p class="label">AI Technical Brief</p>
             <div class="grid grid-cols-2 gap-4">
+              <div><p class="label mb-2">Abstract</p><p class="text-sm leading-relaxed" style="color:var(--text)" x-text="summary.abstract"></p></div>
               <div>
-                <p class="label mb-2">Abstract</p>
-                <p class="text-sm leading-relaxed" style="color:var(--text)" x-text="summary.abstract"></p>
-              </div>
-              <div>
-                <p class="label mb-1">Domain</p>
-                <p class="text-sm text-white mb-3" x-text="summary.technology_domain"></p>
-                <p class="label mb-1">Novelty</p>
-                <p class="text-sm leading-relaxed" style="color:var(--text)" x-text="summary.novelty_statement"></p>
+                <p class="label mb-1">Domain</p><p class="text-sm text-white mb-3" x-text="summary.technology_domain"></p>
+                <p class="label mb-1">Novelty</p><p class="text-sm leading-relaxed" style="color:var(--text)" x-text="summary.novelty_statement"></p>
               </div>
             </div>
-            <!-- Claims box -->
             <div style="background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.2);border-radius:10px;padding:16px">
               <p class="label mb-3" style="color:#818cf8">⬡ Core Independent Claims</p>
               <ul class="flex flex-col gap-2">
@@ -122,10 +182,7 @@
                 </template>
               </ul>
             </div>
-            <div>
-              <p class="label mb-1">Commercial Relevance</p>
-              <p class="text-sm" style="color:var(--text)" x-text="summary.commercial_relevance"></p>
-            </div>
+            <div><p class="label mb-1">Commercial Relevance</p><p class="text-sm" style="color:var(--text)" x-text="summary.commercial_relevance"></p></div>
           </div>
 
           <!-- Patent Figures -->
@@ -139,10 +196,8 @@
                 <template x-for="img in images" :key="img.id">
                   <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0">
                     <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fff;width:220px;height:160px;display:flex;align-items:center;justify-content:center">
-                      <img :src="'/api/v1/images/'+img.id"
-                           :alt="'Page '+img.page_number"
-                           style="max-width:218px;max-height:158px;object-fit:contain;display:block"
-                           loading="lazy"/>
+                      <img :src="'/api/v1/images/'+img.id" :alt="'Page '+img.page_number"
+                           style="max-width:218px;max-height:158px;object-fit:contain;display:block" loading="lazy"/>
                     </div>
                     <span class="font-mono text-xs" style="color:var(--text3)" x-text="'p. '+img.page_number"></span>
                   </div>
@@ -151,7 +206,7 @@
             </div>
           </div>
 
-          <!-- Chunks table -->
+          <!-- Chunks -->
           <div class="card overflow-hidden" style="border-radius:14px">
             <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border)">
               <p class="label">Extracted Sections</p>
@@ -163,15 +218,7 @@
                 <tbody>
                   <template x-for="(c,i) in chunks" :key="i">
                     <tr>
-                      <td style="width:140px">
-                        <span class="badge"
-                              :class="{
-                                'badge-clear':  c.section_type==='claim_independent',
-                                'badge-medium': c.section_type==='claim_dependent',
-                                'badge-low':    c.section_type==='description',
-                              }"
-                              x-text="c.section_type.replace('_',' ')"></span>
-                      </td>
+                      <td style="width:140px"><span class="badge" :class="{'badge-clear':c.section_type==='claim_independent','badge-medium':c.section_type==='claim_dependent','badge-low':c.section_type==='description'}" x-text="c.section_type.replace('_',' ')"></span></td>
                       <td class="text-xs" style="color:var(--text2)" x-text="c.content.slice(0,200)+(c.content.length>200?'…':'')"></td>
                     </tr>
                   </template>
@@ -184,36 +231,134 @@
       </template>
     </div>
   </div>
+</div><!-- end flex layout -->
+
+<!-- Delete modal -->
+<div x-cloak x-show="deleteTarget" x-transition.opacity
+     style="position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:50"
+     @keydown.escape.window="deleteTarget=null">
+  <div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%">
+    <div class="card p-6 flex flex-col gap-4" x-transition.scale style="width:400px;border-radius:16px;border:1px solid rgba(239,68,68,0.25)">
+      <div class="flex items-center gap-3">
+        <div style="width:38px;height:38px;border-radius:10px;background:rgba(239,68,68,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><polyline points="3 6 5 6 21 6" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6M14 11v6" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-white">Delete Patent</p>
+          <p class="font-mono text-xs" style="color:#818cf8" x-text="deleteTarget ? deleteTarget.patent_number : ''"></p>
+        </div>
+      </div>
+      <p class="text-sm" style="color:var(--text)">This will permanently delete the patent record, all extracted text chunks, and all stored figure images. This cannot be undone.</p>
+      <div class="flex gap-2 justify-end">
+        <button class="btn btn-secondary" @click="deleteTarget=null" :disabled="deleting">Cancel</button>
+        <button @click="doDelete()" :disabled="deleting"
+                style="font-size:12px;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.35);padding:6px 18px;border-radius:8px;cursor:pointer;font-weight:500;display:flex;align-items:center;justify-content:center;gap:6px;min-width:152px">
+          <template x-if="!deleting"><span>Delete Permanently</span></template>
+          <template x-if="deleting"><span class="flex items-center gap-1.5"><div class="spinner" style="width:12px;height:12px;border-color:#f87171;border-top-color:transparent"></div>Deleting…</span></template>
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
 
+</div><!-- end x-data -->
+
 <script>
-function summariesPage(){
+function summariesPage() {
   return {
-    allPatents:{{ patents|tojson }}, filtered:[], selected:null,
-    search:'', filterJX:'', summary:null, chunks:[], images:[], summaryLoading:false,
-    init(){ this.filtered=[...this.allPatents]; },
-    filterPatents(){
-      const q=this.search.toLowerCase();
-      this.filtered=this.allPatents.filter(p=>
-        (!q||p.patent_number.toLowerCase().includes(q)||p.title.toLowerCase().includes(q)||(p.assignee||'').toLowerCase().includes(q))&&
-        (!this.filterJX||p.jurisdiction===this.filterJX));
+    allPatents: {{ patents|tojson }},
+    filtered: [], selected: null,
+    search: '', filterJX: '',
+    summary: null, chunks: [], images: [],
+    summaryLoading: false,
+    editing: false, editForm: {}, editError: '', saving: false,
+    deleteTarget: null, deleting: false,
+
+    init() { this.filtered = [...this.allPatents]; },
+
+    filterPatents() {
+      const q = this.search.toLowerCase();
+      this.filtered = this.allPatents.filter(p =>
+        (!q || p.patent_number.toLowerCase().includes(q) || p.title.toLowerCase().includes(q) || (p.assignee||'').toLowerCase().includes(q)) &&
+        (!this.filterJX || p.jurisdiction === this.filterJX)
+      );
     },
-    async selectPatent(p){
-      this.selected=p; this.summary=null; this.chunks=[]; this.images=[];
-      try{
+
+    async selectPatent(p) {
+      this.selected = p;
+      this.summary = null; this.chunks = []; this.images = [];
+      this.editing = false; this.editError = '';
+      try {
         const [cr, ir] = await Promise.all([
           fetch(`/api/v1/patents/${p.id}`),
           fetch(`/api/v1/patents/${p.id}/images`),
         ]);
-        const cd=await cr.json(); this.chunks=cd.chunks||[];
-        this.images=await ir.json();
-      }catch(e){}
+        const cd = await cr.json();
+        this.chunks = cd.chunks || [];
+        this.images = await ir.json();
+      } catch(e) {}
     },
-    async loadSummary(){
-      if(!this.selected)return; this.summaryLoading=true;
-      try{ const r=await fetch(`/api/v1/patents/${this.selected.id}/summary`); const d=await r.json(); this.summary=d.summary; }
-      catch(e){}finally{ this.summaryLoading=false; }
-    }
+
+    async loadSummary() {
+      if (!this.selected) return;
+      this.summaryLoading = true;
+      try {
+        const r = await fetch(`/api/v1/patents/${this.selected.id}/summary`);
+        const d = await r.json();
+        this.summary = d.summary;
+      } catch(e) {} finally { this.summaryLoading = false; }
+    },
+
+    reIngest() { window.location.href = '/upload'; },
+
+    startEditFor(p) {
+      this.editForm = {
+        patent_number:    p.patent_number,
+        title:            p.title,
+        assignee:         p.assignee || '',
+        jurisdiction:     p.jurisdiction,
+        publication_date: p.publication_date || '',
+      };
+      this.editError = '';
+      this.editing = true;
+    },
+
+    cancelEdit() { this.editing = false; this.editError = ''; },
+
+    async saveEdit() {
+      this.saving = true; this.editError = '';
+      try {
+        const r = await fetch(`/api/v1/patents/${this.selected.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.editForm),
+        });
+        if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Save failed'); }
+        const updated = await r.json();
+        Object.assign(this.selected, updated);
+        const idx = this.allPatents.findIndex(p => p.id === this.selected.id);
+        if (idx >= 0) Object.assign(this.allPatents[idx], updated);
+        this.filterPatents();
+        this.editing = false;
+      } catch(e) { this.editError = e.message; }
+      finally { this.saving = false; }
+    },
+
+    confirmDeleteFor(p) { this.deleteTarget = p; },
+
+    async doDelete() {
+      if (!this.deleteTarget) return;
+      this.deleting = true;
+      try {
+        const r = await fetch(`/api/v1/patents/${this.deleteTarget.id}`, { method: 'DELETE' });
+        if (!r.ok && r.status !== 204) { const e = await r.json(); throw new Error(e.detail || 'Delete failed'); }
+        this.allPatents = this.allPatents.filter(p => p.id !== this.deleteTarget.id);
+        this.filterPatents();
+        if (this.selected?.id === this.deleteTarget.id) { this.selected = null; this.editing = false; }
+        this.deleteTarget = null;
+      } catch(e) { alert('Delete failed: ' + e.message); }
+      finally { this.deleting = false; }
+    },
   }
 }
 </script>

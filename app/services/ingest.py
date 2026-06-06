@@ -24,6 +24,8 @@ Functions:
     This function is synchronous — call it with asyncio.to_thread() from async routes.
 """
 import logging
+import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import fitz
@@ -35,6 +37,23 @@ from app.utils.pdf import extract_page_text, extract_figure_pages, split_into_ch
 from app.utils.translation import detect_language, translate_chunks, translate_to_english
 
 log = logging.getLogger(__name__)
+
+_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+def _normalise_date(raw: str) -> Optional[str]:
+    """Return an ISO YYYY-MM-DD string, or None if the input is blank or unparseable."""
+    if not raw:
+        return None
+    if _ISO_DATE_RE.match(raw):
+        return raw
+    from datetime import datetime
+    for fmt in ('%d.%m.%Y', '%d/%m/%Y', '%m/%d/%Y', '%B %d, %Y', '%b. %d, %Y', '%Y%m%d'):
+        try:
+            return datetime.strptime(raw.strip(), fmt).strftime('%Y-%m-%d')
+        except ValueError:
+            pass
+    log.warning("Unrecognised date format %r — storing as NULL", raw)
+    return None
 
 
 def ingest_pdf(
@@ -48,8 +67,8 @@ def ingest_pdf(
     jurisdiction: str = "",
     pub_date: str = "",
 ) -> Dict[str, Any]:
-    safe_stem = filename.replace("/", "_").replace("\\", "_")
-    tmp_path = UPLOAD_DIR / f"ingest_{safe_stem}"
+    safe_stem = Path(filename).stem.replace("/", "_").replace("\\", "_")
+    tmp_path = UPLOAD_DIR / f"ingest_{safe_stem}.pdf"
 
     try:
         tmp_path.write_bytes(pdf_bytes)
@@ -101,7 +120,7 @@ def ingest_pdf(
         final_title  = title.strip()         or auto_meta["title"]          or "Untitled Patent"
         final_assign = assignee.strip()      or auto_meta["assignee"]       or ""
         final_jx     = jurisdiction.strip()  or auto_meta["jurisdiction"]   or "US"
-        final_date   = pub_date.strip()      or auto_meta["publication_date"] or None
+        final_date   = _normalise_date(pub_date.strip() or auto_meta["publication_date"] or "")
 
         log.info("Metadata → number=%s title=%s assignee=%s jx=%s date=%s",
                  final_number, final_title, final_assign, final_jx, final_date)
@@ -133,10 +152,35 @@ def ingest_pdf(
         all_chunks = [c for c in all_chunks if len(c["content"]) >= 10]
         log.info("Extracted %d chunks from %d pages", len(all_chunks), total_pages)
 
+        # Extract figure pages first — even image-only PDFs (0 text chunks) still have figures.
+        # PostgREST requires bytea to be sent as a \x-prefixed hex string.
+        figures = extract_figure_pages(doc)
+        images_inserted = 0
+        if figures:
+            image_records = [
+                {
+                    "patent_id":   patent_id,
+                    "page_number": fig["page_number"],
+                    "width":       fig["width"],
+                    "height":      fig["height"],
+                    "image_data":  "\\x" + fig["image_data"].hex(),
+                }
+                for fig in figures
+            ]
+            # Insert one image at a time — PNG blobs can be several hundred KB each;
+            # batching them together easily exceeds Supabase's statement timeout.
+            for record in image_records:
+                supabase.table("patent_images").insert(record).execute()
+                images_inserted += 1
+            log.info("Stored %d figure images for patent=%s", images_inserted, final_number)
+
         if not all_chunks:
             return {
-                "patent_id": patent_id, "chunks_inserted": 0,
-                "patent_number": final_number, "language": src_lang,
+                "patent_id":       patent_id,
+                "chunks_inserted": 0,
+                "images_inserted": images_inserted,
+                "patent_number":   final_number,
+                "language":        src_lang,
                 "warning": "No text content extracted from PDF.",
             }
 
@@ -162,35 +206,11 @@ def ingest_pdf(
         total = 0
         for i in range(0, len(records), BATCH_SIZE):
             batch = records[i: i + BATCH_SIZE]
-            resp = supabase.table("patent_chunks").insert(batch).execute()
-            inserted = len(resp.data) if resp.data else 0
-            total += inserted
-            if inserted == 0:
-                log.error(
-                    "Zero rows from Supabase insert at offset %d — "
-                    "check: migration_v2.sql applied, RLS disabled on patent_chunks", i
-                )
-
-        # Extract figure pages and store as PNG in patent_images.
-        # PostgREST requires bytea to be sent as a \x-prefixed hex string.
-        figures = extract_figure_pages(doc)
-        images_inserted = 0
-        if figures:
-            image_records = [
-                {
-                    "patent_id":   patent_id,
-                    "page_number": fig["page_number"],
-                    "width":       fig["width"],
-                    "height":      fig["height"],
-                    "image_data":  "\\x" + fig["image_data"].hex(),
-                }
-                for fig in figures
-            ]
-            for i in range(0, len(image_records), BATCH_SIZE):
-                batch = image_records[i: i + BATCH_SIZE]
-                resp = supabase.table("patent_images").insert(batch).execute()
-                images_inserted += len(resp.data) if resp.data else 0
-            log.info("Stored %d figure images for patent=%s", images_inserted, final_number)
+            # supabase-py >= 2.9 defaults to return=minimal (HTTP 204, no body),
+            # so resp.data is always []. Count the batch directly; PostgREST raises
+            # on any real failure (constraint violation, RLS block, schema mismatch).
+            supabase.table("patent_chunks").insert(batch).execute()
+            total += len(batch)
 
         log.info("Ingest complete: patent=%s chunks=%d images=%d lang=%s translated=%s",
                  final_number, total, images_inserted, src_lang, not is_english)

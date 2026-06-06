@@ -10,7 +10,9 @@ Endpoints:
                                           (regex-first, LLM fills missing fields)
   POST /api/v1/ingest                   → full ingestion pipeline: PDF → chunks → embeddings → Supabase
   GET  /api/v1/patents                  → list all patents (optional ?jurisdiction= ?assignee= filters)
-  GET  /api/v1/patents/{patent_id}      → single patent with all its chunks
+  GET    /api/v1/patents/{patent_id}      → single patent with all its chunks
+  PATCH  /api/v1/patents/{patent_id}      → update metadata fields (partial update)
+  DELETE /api/v1/patents/{patent_id}      → delete patent + all chunks + images
   GET  /api/v1/patents/{patent_id}/summary → LLM-generated one-page patent summary
   GET  /api/v1/patents/{patent_id}/images → list figure metadata (id, page_number) — no binary data
   GET  /api/v1/images/{image_id}          → stream a single figure as image/png
@@ -37,6 +39,7 @@ from app.models import (
     CompareRequest,
     DesignEvaluationRequest,
     DesignEvaluationResponse,
+    PatentUpdateRequest,
 )
 from app.services.ingest import ingest_pdf
 from app.services.llm import llm_json
@@ -169,6 +172,62 @@ async def get_patent(patent_id: str):
         return {"document": doc_resp.data, "chunks": chunks_resp.data or []}
     except Exception as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.patch("/api/v1/patents/{patent_id}")
+async def update_patent(patent_id: str, body: PatentUpdateRequest):
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update.")
+    try:
+        def _update():
+            return (
+                state.supabase.table("patent_documents")
+                .update(fields)
+                .eq("id", patent_id)
+                .execute()
+            )
+        resp = await asyncio.to_thread(_update)
+        if not resp.data:
+            raise HTTPException(status_code=404, detail="Patent not found.")
+        return resp.data[0]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.delete("/api/v1/patents/{patent_id}", status_code=204)
+async def delete_patent(patent_id: str):
+    """Delete a patent and all its child rows.
+
+    Uses per-table batch sizes to stay within Supabase's statement timeout:
+    - patent_chunks: 50 per batch (rows are small — just text + embedding string)
+    - patent_images: 1 per batch (rows contain full PNG bytea, often 200 KB+;
+      deleting even a handful at once causes PostgreSQL to exceed the timeout)
+    """
+    def _delete_in_batches(table: str, id_col: str, batch: int):
+        while True:
+            rows = (
+                state.supabase.table(table)
+                .select("id")
+                .eq(id_col, patent_id)
+                .limit(batch)
+                .execute()
+            ).data or []
+            if not rows:
+                break
+            ids = [r["id"] for r in rows]
+            state.supabase.table(table).delete().in_("id", ids).execute()
+
+    try:
+        await asyncio.to_thread(_delete_in_batches, "patent_chunks", "patent_id", 50)
+        await asyncio.to_thread(_delete_in_batches, "patent_images", "patent_id", 1)
+        await asyncio.to_thread(
+            lambda: state.supabase.table("patent_documents").delete().eq("id", patent_id).execute()
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/api/v1/patents/{patent_id}/summary")

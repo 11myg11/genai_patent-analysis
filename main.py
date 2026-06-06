@@ -22,8 +22,32 @@ Run:
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 import sys
 from contextlib import asynccontextmanager
+
+# PyMuPDF 1.23.x requires TESSDATA_PREFIX to be set; it cannot auto-discover tessdata.
+# Also ensure the tesseract binary is on PATH when launched outside a Homebrew shell.
+def _configure_tesseract() -> None:
+    # 1. Make sure the binary is findable
+    if not shutil.which("tesseract"):
+        for candidate in ("/opt/homebrew/bin", "/usr/local/bin"):
+            if shutil.which("tesseract", path=candidate):
+                os.environ["PATH"] = candidate + os.pathsep + os.environ.get("PATH", "")
+                break
+
+    # 2. Set TESSDATA_PREFIX if not already set
+    if not os.environ.get("TESSDATA_PREFIX"):
+        tess_bin = shutil.which("tesseract")
+        if tess_bin:
+            # Binary is e.g. /opt/homebrew/bin/tesseract → tessdata at ../../share/tessdata
+            from pathlib import Path as _Path
+            tessdata = _Path(tess_bin).parent.parent / "share" / "tessdata"
+            if tessdata.is_dir():
+                os.environ["TESSDATA_PREFIX"] = str(tessdata)
+
+_configure_tesseract()
 
 import uvicorn
 from fastapi import FastAPI

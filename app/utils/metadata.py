@@ -100,7 +100,7 @@ def extract_metadata(text: str, filename_hint: str = "") -> Dict[str, str]:
                 pass
 
     if not meta["publication_date"]:
-        m = re.search(r'\b(\d{2}\.\d{2}\.20\d{2})\b', text)
+        m = re.search(r'\b(\d{2}\.\d{2}\.\d{4})\b', text)
         if m:
             try:
                 meta["publication_date"] = datetime.strptime(m.group(1), '%d.%m.%Y').strftime('%Y-%m-%d')

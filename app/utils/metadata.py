@@ -27,7 +27,7 @@ from typing import Dict
 log = logging.getLogger(__name__)
 
 _PN_PATTERNS = [
-    r'\b(US\s*\d{6,8}\s*[A-Z]\d?)\b',
+    r'\b(US\s*\d{6,9}\s*[A-Z]\d?)\b',
     r'\b(EP\s*\d{6,7}\s*[A-Z]\d?)\b',
     r'\b(CN\s*\d{8,12}\s*[A-Z]?)\b',
     r'\b(JP\s*\d{7,13}\s*[A-Z]?)\b',
@@ -124,11 +124,32 @@ def extract_metadata(text: str, filename_hint: str = "") -> Dict[str, str]:
         if m:
             meta["assignee"] = m.group(1).strip().rstrip(',.')
 
-    # Title — INID code (54) first
-    m = re.search(r'\(54\)\s*([A-Z][^\n\r]{10,150})', text)
+    # Title — INID code (54) first.
+    # USPTO two-column OCR interleaves title lines with reference citations, so we
+    # grab all text between (54) and the next INID code then filter to lines that
+    # start with an uppercase letter (citations start with digits like "5,994,840 A").
+    m = re.search(r'\(54\)(.*?)(?=\(\d{2}\))', text, re.DOTALL)
     if m:
-        val = m.group(1).strip().rstrip('.')
-        if not any(w in val.upper() for w in ['UNITED STATES', 'PATENT OFFICE', 'APPLICATION']):
+        raw_lines = [l.strip() for l in m.group(1).splitlines() if l.strip()]
+        title_lines = []
+        for line in raw_lines:
+            alpha = [c for c in line if c.isalpha()]
+            # Must start with a letter, have ≥5 alphabetic chars, and be mostly uppercase
+            if not line[0].isalpha() or len(alpha) < 5:
+                continue
+            upper_ratio = sum(1 for c in alpha if c.isupper()) / len(alpha)
+            if upper_ratio < 0.8:
+                continue
+            if any(w in line.upper() for w in [
+                'UNITED STATES', 'PATENT OFFICE', 'APPLICATION',
+                'OTHER PUBLICATIONS', 'U.S. PATENT', 'PRIOR ART',
+            ]):
+                continue
+            title_lines.append(line)
+            if len(title_lines) >= 3:  # patent titles are rarely longer than 3 lines
+                break
+        val = ' '.join(title_lines).strip().rstrip('.')
+        if len(val) >= 10:
             meta["title"] = val.title() if val.isupper() else val
     if not meta["title"]:
         m = re.search(

@@ -241,12 +241,12 @@ function uploadPage() {
 
     async onFileSelect(e) {
       this.file = e.target.files[0] || null;
-      if (this.file) await this.autoExtractMetadata();
+      if (this.file) { this.clearForm(); this.resetStages(); await this.autoExtractMetadata(); }
     },
 
     async onDrop(e) {
       this.file = e.dataTransfer.files[0] || null;
-      if (this.file) await this.autoExtractMetadata();
+      if (this.file) { this.clearForm(); this.resetStages(); await this.autoExtractMetadata(); }
     },
 
     async autoExtractMetadata() {

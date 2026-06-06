@@ -66,16 +66,40 @@ async def health():
 async def extract_metadata_endpoint(file: UploadFile = File(...), filename_hint: str = Form("")):
     contents = await file.read()
     tmp_name = file.filename or "patent.pdf"
-    try:
-        doc = fitz.open(stream=contents, filetype="pdf")
-        header_text = ""
-        for i in range(min(4, len(doc))):
-            header_text += doc[i].get_text("text").strip() + "\n\n"
-        doc.close()
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"PDF read failed: {exc}") from exc
-
     _name = (filename_hint or tmp_name).strip()
+
+    # Write to a temp file so PyMuPDF can open it reliably across all versions
+    import tempfile, os as _os
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
+    try:
+        with _os.fdopen(tmp_fd, "wb") as f:
+            f.write(contents)
+        try:
+            doc = fitz.open(tmp_path)
+            header_text = ""
+            for i in range(min(4, len(doc))):
+                header_text += doc[i].get_text("text").strip() + "\n\n"
+
+            # Many USPTO patents embed all content as raster images — no text layer.
+            # Reuse extract_page_text (which already has the OCR fallback) on the
+            # first 2 pages to recover metadata from image-only PDFs.
+            if len(header_text.strip()) < 80:
+                from app.utils.pdf import extract_page_text
+                try:
+                    header_text = ""
+                    for i in range(min(2, len(doc))):
+                        header_text += extract_page_text(doc[i], src_lang) + "\n\n"
+                    log.info("extract-metadata: OCR fallback produced %d chars", len(header_text))
+                except Exception as ocr_exc:
+                    log.warning("extract-metadata: OCR fallback failed: %s", ocr_exc)
+            doc.close()
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"PDF read failed: {exc}") from exc
+    finally:
+        _os.unlink(tmp_path)
+
     src_lang = detect_language(header_text, _name)
 
     header_en = header_text
@@ -84,8 +108,11 @@ async def extract_metadata_endpoint(file: UploadFile = File(...), filename_hint:
 
     meta = extract_metadata(header_en, _name)
 
-    # LLM enrichment only for fields regex couldn't fill
-    if not meta["patent_number"] or not meta["title"] or not meta["assignee"]:
+    # Only call LLM when we have enough text to work with — skip for scanned/empty PDFs
+    # to avoid a slow call that returns nothing useful.
+    has_text = len(header_en.strip()) > 80
+    missing_key_fields = not meta["patent_number"] or not meta["title"] or not meta["assignee"]
+    if has_text and missing_key_fields:
         try:
             missing = [k for k in ("patent_number", "title", "assignee", "publication_date")
                        if not meta.get(k)]

@@ -1,6 +1,22 @@
+# Environment
 .env
+.env.txt        # ← your project also loads this (see config.py)
+
+# OS
 .DS_Store
+
+# Python
 __pycache__/
 *.pyc
-uploads/
+*.pyo
+.venv/          # ← if you use a virtual environment
+venv/
+
+# IDE
 .idea/
+.vscode/        # ← you have a .vscode folder in your project
+
+# App-specific
+uploads/        # ← temp PDF uploads, no need to push
+*.egg-info/
+dist/

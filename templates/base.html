@@ -188,17 +188,43 @@
     .card:hover { border-color: var(--border2); }
     /* ── Inputs ── */
     input, select, textarea {
-      background: rgba(255,255,255,0.04) !important;
-      border: 1px solid var(--border) !important;
+      background: rgba(255,255,255,0.07) !important;
+      border: 1px solid rgba(255,255,255,0.15) !important;
       color: var(--text) !important;
       border-radius: 8px; outline: none;
       transition: border-color 0.15s, box-shadow 0.15s;
       font-family: 'Inter', sans-serif;
     }
-    input::placeholder, textarea::placeholder { color: var(--text3) !important; }
+    input::placeholder, textarea::placeholder { color: rgba(148,163,184,0.65) !important; }
     input:focus, select:focus, textarea:focus {
-      border-color: rgba(99,102,241,0.5) !important;
+      border-color: rgba(99,102,241,0.7) !important;
       box-shadow: 0 0 0 3px rgba(99,102,241,0.1) !important;
+    }
+    /* ── Select option visibility fix ── */
+    select {
+      color: #e2e8f0 !important;
+      -webkit-appearance: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") !important;
+      background-repeat: no-repeat !important;
+      background-position: right 12px center !important;
+      padding-right: 36px !important;
+    }
+    select option {
+      background: #1a2535;
+      color: #e2e8f0;
+      font-size: 13px;
+      padding: 8px 12px;
+    }
+    select option:checked {
+      background: #2d3f5e;
+      color: #fff;
+    }
+    /* Empty/placeholder state for selects */
+    select.placeholder { color: var(--text3) !important; }
+    /* Unfocused inputs with no value — slightly dimmer border */
+    input:not(:focus):placeholder-shown {
+      border-color: rgba(255,255,255,0.1) !important;
     }
     /* ── Buttons ── */
     .btn {
@@ -221,7 +247,7 @@
     .btn-primary:active:not(:disabled) { transform: translateY(0); }
     .btn-secondary {
       background: rgba(255,255,255,0.05);
-      border: 1px solid var(--border) !important;
+      border: 1px solid rgba(255,255,255,0.15) !important;
       color: var(--text2);
     }
     .btn-secondary:hover:not(:disabled) {
@@ -343,28 +369,35 @@
       </a>
 
       <a href="/summaries" class="nav-link {% if page == '/summaries' %}active{% endif %}">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-          <rect x="3" y="3" width="18" height="18" rx="3"/>
-          <path d="M7 8h10M7 12h7M7 16h5"/>
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          <path d="M8 7h8M8 11h8M8 15h5"/>
         </svg>
         <span>Summaries</span>
         <span class="nav-dot"></span>
       </a>
 
-      <a href="/compare" class="nav-link {% if page == '/compare' %}active{% endif %}">
+      <a href="/risk" class="nav-link {% if page == '/risk' %}active{% endif %}">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-          <path d="M18 20V10M12 20V4M6 20v-6"/>
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <path d="M12 9v4M12 17h.01"/>
         </svg>
         <span>Risk Analysis</span>
         <span class="nav-dot"></span>
       </a>
 
-      <a href="/playground" class="nav-link {% if page == '/playground' %}active{% endif %}">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+      <a href="/design-suggestions" class="nav-link {% if page == '/design-suggestions' %}active{% endif %}">
+        <span class="nav-icon" style="display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:inherit">✦</span>
+        <span>Design Suggestions</span>
+        <span class="nav-dot"></span>
+      </a>
+
+      <a href="/innovation" class="nav-link {% if page == '/innovation' %}active{% endif %}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
         </svg>
-        <span>Innovation Opportunities</span>
+        <span>Innovation</span>
         <span class="nav-dot"></span>
       </a>
 
@@ -403,16 +436,28 @@
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
         <!-- Quick-nav chips always visible -->
         {% set page = request.url.path %}
-        {% for label, href, icon in [
-          ('Upload','/upload','↑'),
-          ('Summaries','/summaries','≡'),
-          ('Risk Analysis','/compare','⇄'),
-          ('Innovation Opportunities','/playground','✦')
-        ] %}
-        {% if href != page %}
-        <a href="{{ href }}" class="qlink">{{ icon }} {{ label }}</a>
+        {% if page != '/upload' %}
+        <a href="/upload" class="qlink">↑ Upload</a>
         {% endif %}
-        {% endfor %}
+        {% if page != '/summaries' %}
+        <a href="/summaries" class="qlink" style="display:flex;align-items:center;gap:5px">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            <path d="M8 7h8M8 11h8M8 15h5"/>
+          </svg>
+          Summaries
+        </a>
+        {% endif %}
+        {% if page != '/risk' %}
+        <a href="/risk" class="qlink">⚠ Risk Analysis</a>
+        {% endif %}
+        {% if page != '/design-suggestions' %}
+        <a href="/design-suggestions" class="qlink">✦ Design Suggestions</a>
+        {% endif %}
+        {% if page != '/innovation' %}
+        <a href="/innovation" class="qlink">★ Innovation</a>
+        {% endif %}
       </div>
     </div>
 

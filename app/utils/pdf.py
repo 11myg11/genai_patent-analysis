@@ -71,6 +71,13 @@ CLAIM_DEP_RE = re.compile(
 )
 CLAIM_NUM_RE = re.compile(r"^\s*\d{1,3}\.\s")
 
+# Matches numbered claims that reference another claim → dependent
+# e.g. "7. The laminate of claim 1, wherein..." or "3. The method of claim 2..."
+CLAIM_DEP_REF_RE = re.compile(
+    r"^\s*\d{1,3}\.\s.*\bof\s+claim\s+\d+\b",
+    re.IGNORECASE,
+)
+
 # Map ISO 639-1 codes → Tesseract language codes (only non-obvious ones needed)
 _TESS_LANG: Dict[str, str] = {
     "zh": "chi_sim",
@@ -110,13 +117,31 @@ def extract_page_text(page: fitz.Page, src_lang: str = "en") -> str:
 
 
 def determine_section_type(text: str) -> str:
+    """
+    Classify a chunk as claim_independent, claim_dependent, or description.
+
+    Priority order:
+    1. If the chunk references another claim ("of claim N") → dependent
+    2. If it contains "wherein" → dependent
+    3. If it starts with a number + period (any claim number) and is NOT
+       a back-reference → independent claim
+    4. Everything else → description
+    """
     s = text.strip()
-    if CLAIM_INDEP_RE.match(s):
-        return "claim_independent"
+
+    # Rule 1 — numbered claim that explicitly references another claim → dependent
+    if CLAIM_DEP_REF_RE.match(s):
+        return "claim_dependent"
+
+    # Rule 2 — contains "wherein" (classic dependent claim language) → dependent
     if CLAIM_DEP_RE.search(s):
         return "claim_dependent"
+
+    # Rule 3 — starts with "N. " and no back-reference → independent claim
     if CLAIM_NUM_RE.match(s):
-        return "claim_dependent"
+        return "claim_independent"
+
+    # Rule 4 — everything else → description
     return "description"
 
 

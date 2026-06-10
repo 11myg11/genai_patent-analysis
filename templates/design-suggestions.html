@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Design Suggestions{% endblock %}
+{% block breadcrumb %}Design Suggestions{% endblock %}
+{% block content %}
+<div class="p-7 flex flex-col gap-5" x-data="designSuggestionsPage()" x-init="init()" @keydown.escape.window="activeChunk=null">
+
+  <!-- Header -->
+  <div class="flex items-start justify-between">
+    <div>
+      <h1 class="font-display text-2xl font-bold text-white tracking-tight">Design Suggestions</h1>
+      <p class="mt-1 text-sm" style="color:var(--text2)">Generate alternative design proposals that reduce IP risk. Each suggestion is re-scored for risk and validated against Fuyao manufacturing constraints.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 px-3 py-2 rounded-lg" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.35)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex-shrink:0">
+          <path d="M12 2L2 19h20L12 2z" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 9v4M12 16h.01" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <span style="font-size:11px;font-weight:600;color:#fbbf24;letter-spacing:0.04em">🚧 Under Construction</span>
+      </div>
+      <a href="/risk" class="btn btn-secondary" style="font-size:12px;padding:7px 16px">← Back to Risk Analysis</a>
+    </div>
+  </div>
+
+  <!-- Input card -->
+  <div class="card p-5" style="border-radius:16px">
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      <div>
+        <p class="label mb-1.5">Product ID</p>
+        <input x-model="form.product_id" type="text" placeholder="FYG-WS-2024-A7" class="w-full px-3 py-2.5 text-sm"/>
+      </div>
+      <div>
+        <p class="label mb-1.5">Component Scope</p>
+        <input x-model="form.component_scope" type="text" placeholder="Automotive laminated windshield" class="w-full px-3 py-2.5 text-sm"/>
+      </div>
+      <div>
+        <p class="label mb-1.5">Search Corpus By Jurisdiction</p>
+        <select x-model="form.jurisdiction" class="w-full px-3 py-2.5 text-sm">
+          <option value="ALL">🌍 All Jurisdictions (full corpus)</option>
+          {% for jx in jurisdictions %}
+          <option value="{{ jx }}">{{ jx }} patents only</option>
+          {% endfor %}
+        </select>
+        <p class="mt-1.5 text-xs" style="color:var(--text3)">Filters which patents in the database are compared against your design.</p>
+      </div>
+    </div>
+    <div class="mb-4">
+      <p class="label mb-1.5">Design Specification</p>
+      <textarea x-model="form.specs" rows="5"
+        placeholder="Describe your design in detail — materials, dimensions, construction, functional novelties…"
+        class="w-full px-3 py-3 text-sm resize-none" style="line-height:1.7"></textarea>
+    </div>
+    <div class="flex items-center gap-3">
+      <button class="btn btn-primary" style="padding:10px 28px" @click="runAnalysis()" :disabled="!form.specs||!form.product_id||loading">
+        <span x-show="!loading" class="flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 3l14 9-14 9V3z" fill="currentColor"/></svg>
+          Generate Design Suggestions
+        </span>
+        <span x-show="loading" class="flex items-center gap-2">
+          <div class="spinner" style="width:14px;height:14px"></div>Running Pipeline…
+        </span>
+      </button>
+      <button class="btn btn-secondary" @click="reset()">Clear</button>
+      <div class="ml-3 flex items-center gap-2">
+        <div style="width:6px;height:6px;border-radius:50%;background:#34d399;box-shadow:0 0 6px #34d399"></div>
+        <span class="text-xs" style="color:var(--text3)">Design-around generation + Fuyao manufacturing audit loop</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error banner -->
+  <div x-show="errorMsg" x-transition class="card p-4 flex items-start gap-3"
+       style="border-radius:12px;border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.06)">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:2px">
+      <circle cx="12" cy="12" r="10" stroke="#fbbf24" stroke-width="1.8"/>
+      <path d="M12 8v4M12 16h.01" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <p class="text-xs leading-relaxed" style="color:var(--text2)" x-text="errorMsg"></p>
+  </div>
+
+  <!-- Results — design arounds only -->
+  <div x-show="result" x-transition class="flex flex-col gap-5">
+
+    <!-- Summary bar -->
+    <div class="card p-5 flex items-center gap-5" style="border-radius:16px">
+      <div>
+        <p class="label mb-1">Original Design Risk</p>
+        <span class="badge text-sm"
+              :class="{'badge-high':result&&result.original_risk_status==='HIGH','badge-medium':result&&result.original_risk_status==='MEDIUM','badge-low':result&&result.original_risk_status==='LOW','badge-clear':result&&result.original_risk_status==='CLEAR'}"
+              x-text="result?result.original_risk_status:''"></span>
+      </div>
+      <div style="width:1px;height:36px;background:var(--border)"></div>
+      <div>
+        <p class="label mb-1">Product ID</p>
+        <p class="font-mono text-sm text-white" x-text="result?result.product_id:''"></p>
+      </div>
+      <div style="width:1px;height:36px;background:var(--border)"></div>
+      <div>
+        <p class="label mb-1">Proposals</p>
+        <p class="font-mono text-sm text-white" x-text="result?result.suggestions.length+' suggestions':''"></p>
+      </div>
+      <div style="width:1px;height:36px;background:var(--border)"></div>
+      <div>
+        <p class="label mb-1">Passed Risk Filter</p>
+        <p class="font-mono text-sm text-white" x-text="result?result.proposals_passed+' / '+result.proposals_generated+' proposals':''"></p>
+      </div>
+      <div class="ml-auto">
+        <a href="/risk" class="btn btn-secondary" style="font-size:12px;padding:7px 16px">← View Full Risk Analysis</a>
+      </div>
+    </div>
+
+    <!-- Design around proposals — single scrollable column -->
+    <div class="card flex flex-col overflow-hidden" style="border-radius:16px">
+      <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border)">
+        <div>
+          <p class="label">AI Design Suggestions</p>
+          <p class="text-xs mt-0.5" style="color:var(--text3)">Low-risk alternatives · Re-scored by IP agent · Validated by Fuyao Manufacturing Auditor</p>
+        </div>
+        <span class="badge badge-info font-mono" x-text="result?result.suggestions.length+' proposals':''"></span>
+      </div>
+      <div style="overflow-y:auto">
+        <template x-for="(da,i) in (result?result.design_arounds:[])" :key="da.id">
+          <div class="px-6 py-5 fade-up" style="border-bottom:1px solid var(--border)" :style="`animation-delay:${i*0.1}s`">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="font-mono text-xs font-bold px-2.5 py-1 rounded"
+                    style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:#818cf8"
+                    x-text="'Design-Around ' + da.id.replace('DA','#')"></span>
+              <span class="badge badge-low" style="display:flex;align-items:center;gap:4px">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+                Passed Manufacturing Review
+              </span>
+            </div>
+            <p class="text-sm text-white leading-relaxed mb-3" x-text="da.description"></p>
+            <p class="label mb-1">Rationale</p>
+            <p class="text-xs leading-relaxed mb-3" style="color:var(--text2)" x-text="da.rationale"></p>
+            <template x-if="da.audit_notes">
+              <div class="px-3 py-2 rounded-lg text-xs" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.15)">
+                <p class="label mb-1" style="color:#34d399">Auditor Agent's Note</p>
+                <span style="color:var(--text2)" x-text="da.audit_notes"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- Empty state -->
+        <div x-show="!result||!result.design_arounds||result.design_arounds.length===0"
+             class="flex flex-col items-center justify-center py-16 gap-3">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" style="opacity:0.3">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.8"/>
+          </svg>
+          <p class="text-sm" style="color:var(--text3)">No proposals generated yet.</p>
+          <a href="/risk" class="qlink">Run Risk Analysis first →</a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div><!-- end Alpine root -->
+
+<script>
+function designSuggestionsPage(){
+  return {
+    loading:false, result:null, errorMsg:'', isQuotaError:false,
+    form:{ product_id:'', component_scope:'Automotive laminated windshield', specs:'', jurisdiction:'ALL' },
+    init(){
+      try {
+        const saved = sessionStorage.getItem('design_suggestions_last_result');
+        if (saved) this.result = JSON.parse(saved);
+        const savedForm = sessionStorage.getItem('design_suggestions_last_form');
+        if (savedForm) this.form = { ...this.form, ...JSON.parse(savedForm) };
+      } catch(e) {}
+    },
+    reset(){
+      this.result=null; this.errorMsg=''; this.isQuotaError=false;
+      this.form.specs=''; this.form.product_id='';
+      sessionStorage.removeItem('design_suggestions_last_result');
+      sessionStorage.removeItem('design_suggestions_last_form');
+    },
+    async runAnalysis(){
+      if(!this.form.specs||!this.form.product_id)return;
+      this.loading=true; this.result=null; this.errorMsg=''; this.isQuotaError=false;
+      try{
+        const r=await fetch('/api/v1/design-suggestions',{
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            product_id:this.form.product_id,
+            component_scope:this.form.component_scope,
+            proposed_specifications:this.form.specs,
+            jurisdiction:this.form.jurisdiction,
+          })
+        });
+        const data=await r.json();
+        if(!r.ok){
+          const detail=data.detail||'Unknown error';
+          this.isQuotaError=(r.status===429||detail.includes('QUOTA_EXHAUSTED'));
+          this.errorMsg=this.isQuotaError ? 'API quota exhausted. Please check your API key in .env and restart.' : detail;
+          return;
+        }
+        this.result=data;
+        try {
+          sessionStorage.setItem('design_suggestions_last_result', JSON.stringify(data));
+          sessionStorage.setItem('design_suggestions_last_form', JSON.stringify(this.form));
+        } catch(e) {}
+      }catch(e){
+        this.errorMsg='Network error: '+e.message;
+      }finally{this.loading=false;}
+    }
+  }
+}
+</script>
+{% endblock %}

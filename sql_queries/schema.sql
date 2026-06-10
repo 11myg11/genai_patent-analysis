@@ -73,7 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_patent_documents_jurisdiction
 CREATE OR REPLACE FUNCTION match_patent_hybrid(
     query_embedding   VECTOR(384),
     query_text        TEXT,
-    filter_jurisdiction TEXT    DEFAULT 'US',
+    filter_jurisdiction TEXT    DEFAULT NULL,
     match_count       INT      DEFAULT 3,
     rrf_k             INT      DEFAULT 60
 )
@@ -102,13 +102,13 @@ BEGIN
             pd.jurisdiction,
             pc.section_type,
             pc.content,
-            ts_rank_cd(pc.fts_tokens, plainto_tsquery('english', query_text)) AS rank_score,
+            ts_rank_cd(pc.fts_tokens, plainto_tsquery('english', query_text))::FLOAT8 AS rank_score,
             ROW_NUMBER() OVER (
                 ORDER BY ts_rank_cd(pc.fts_tokens, plainto_tsquery('english', query_text)) DESC
             ) AS row_num
         FROM patent_chunks pc
         JOIN patent_documents pd ON pd.id = pc.patent_id
-        WHERE pd.jurisdiction = filter_jurisdiction
+        WHERE (filter_jurisdiction IS NULL OR pd.jurisdiction = filter_jurisdiction)
           AND pc.fts_tokens IS NOT NULL
           AND pc.fts_tokens @@ plainto_tsquery('english', query_text)
         ORDER BY rank_score DESC
@@ -123,13 +123,13 @@ BEGIN
             pd.jurisdiction,
             pc.section_type,
             pc.content,
-            1 - (pc.embedding <=> query_embedding)  AS rank_score,
+            (1 - (pc.embedding <=> query_embedding))::FLOAT8 AS rank_score,
             ROW_NUMBER() OVER (
                 ORDER BY pc.embedding <=> query_embedding ASC
             ) AS row_num
         FROM patent_chunks pc
         JOIN patent_documents pd ON pd.id = pc.patent_id
-        WHERE pd.jurisdiction = filter_jurisdiction
+        WHERE (filter_jurisdiction IS NULL OR pd.jurisdiction = filter_jurisdiction)
         ORDER BY pc.embedding <=> query_embedding ASC
         LIMIT match_count * 5
     ),
@@ -147,7 +147,7 @@ BEGIN
             (
                 COALESCE(1.0 / (rrf_k + f.row_num), 0.0) +
                 COALESCE(1.0 / (rrf_k + v.row_num), 0.0)
-            )                                          AS rrf_score
+            )::FLOAT8                                  AS rrf_score
         FROM fts_ranked f
         FULL OUTER JOIN vec_ranked v ON f.chunk_id = v.chunk_id
     )

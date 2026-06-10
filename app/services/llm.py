@@ -69,7 +69,10 @@ def llm_text(prompt: str, max_tokens: int = LLM_MAX_TOKENS) -> str:
                 max_tokens=max_tokens,
                 temperature=0.2,
             )
-            result = resp.choices[0].message.content.strip()
+            raw_content = resp.choices[0].message.content
+            if raw_content is None:
+                raise ValueError("LLM returned empty response (None). The model may have timed out or exceeded token limit.")
+            result = raw_content.strip()
             _CACHE[key] = result
             return result
         except RateLimitError as exc:

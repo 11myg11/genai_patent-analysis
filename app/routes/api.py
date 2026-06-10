@@ -5,23 +5,19 @@ Route handlers are kept thin: they validate input, delegate to services/utils,
 and map exceptions to HTTP status codes. No business logic lives here.
 
 Endpoints:
-  GET  /health                          → {"status": "ok"} — liveness probe
-  POST /api/v1/extract-metadata         → extract patent metadata from a PDF upload
-                                          (regex-first, LLM fills missing fields)
-  POST /api/v1/ingest                   → full ingestion pipeline: PDF → chunks → embeddings → Supabase
-  GET  /api/v1/patents                  → list all patents (optional ?jurisdiction= ?assignee= filters)
-  GET    /api/v1/patents/{patent_id}      → single patent with all its chunks
-  PATCH  /api/v1/patents/{patent_id}      → update metadata fields (partial update)
-  DELETE /api/v1/patents/{patent_id}      → delete patent + all chunks + images
-  GET  /api/v1/patents/{patent_id}/summary → LLM-generated one-page patent summary
-  GET  /api/v1/patents/{patent_id}/images → list figure metadata (id, page_number) — no binary data
-  GET  /api/v1/images/{image_id}          → stream a single figure as image/png
-  POST /api/v1/compare                  → compare two patents: overlap analysis + similarity score
-  POST /api/v1/evaluate-design          → core IP risk assessment + audited design-around proposals
-
-All blocking Supabase calls are wrapped with asyncio.to_thread().
-The ingestion route calls services/ingest.py:ingest_pdf() via asyncio.to_thread()
-because the full pipeline (PDF parsing, embedding, bulk insert) is synchronous.
+  GET  /health                            → liveness probe
+  POST /api/v1/extract-metadata           → extract patent metadata from a PDF upload
+  POST /api/v1/ingest                     → full ingestion pipeline
+  GET  /api/v1/patents                    → list all patents
+  GET  /api/v1/patents/{patent_id}        → single patent with all chunks
+  PATCH  /api/v1/patents/{patent_id}      → partial metadata update
+  DELETE /api/v1/patents/{patent_id}      → delete patent + chunks + images
+  GET  /api/v1/patents/{patent_id}/summary → LLM-generated summary
+  GET  /api/v1/patents/{patent_id}/images  → list figure metadata
+  GET  /api/v1/images/{image_id}           → stream a single figure as PNG
+  POST /api/v1/compare                    → compare two patents
+  POST /api/v1/risk-analysis              → Phase 2: IP risk assessment only
+  POST /api/v1/design-suggestions         → Phase 3: design proposals built on risk output
 """
 import asyncio
 import json
@@ -37,8 +33,11 @@ from app.config import settings
 from app.models import (
     ChunkReference,
     CompareRequest,
-    DesignEvaluationRequest,
-    DesignEvaluationResponse,
+    DesignSuggestionRequest,
+    DesignSuggestionResponse,
+    PatentRiskResult,
+    RiskAnalysisRequest,
+    RiskAnalysisResponse,
     PatentUpdateRequest,
 )
 from app.services.ingest import ingest_pdf
@@ -46,8 +45,10 @@ from app.services.llm import llm_json
 from app.services.retrieval import (
     build_context_block,
     call_agent_auditor,
-    call_agent_generator,
+    call_agent_designer,
+    call_agent_risk,
     fetch_hybrid_matches,
+    run_patent_risk_pipeline,
 )
 from app.state import state
 from app.utils.metadata import extract_metadata
@@ -57,10 +58,18 @@ router = APIRouter()
 log = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
+
 @router.get("/health", include_in_schema=False)
 async def health():
     return JSONResponse({"status": "ok"})
 
+
+# ---------------------------------------------------------------------------
+# Metadata extraction
+# ---------------------------------------------------------------------------
 
 @router.post("/api/v1/extract-metadata")
 async def extract_metadata_endpoint(file: UploadFile = File(...), filename_hint: str = Form("")):
@@ -68,7 +77,6 @@ async def extract_metadata_endpoint(file: UploadFile = File(...), filename_hint:
     tmp_name = file.filename or "patent.pdf"
     _name = (filename_hint or tmp_name).strip()
 
-    # Write to a temp file so PyMuPDF can open it reliably across all versions
     import tempfile, os as _os
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
     try:
@@ -80,9 +88,6 @@ async def extract_metadata_endpoint(file: UploadFile = File(...), filename_hint:
             for i in range(min(4, len(doc))):
                 header_text += doc[i].get_text("text").strip() + "\n\n"
 
-            # Many USPTO patents embed all content as raster images — no text layer.
-            # Reuse extract_page_text (which already has the OCR fallback) on the
-            # first 2 pages to recover metadata from image-only PDFs.
             if len(header_text.strip()) < 80:
                 from app.utils.pdf import extract_page_text
                 try:
@@ -101,15 +106,12 @@ async def extract_metadata_endpoint(file: UploadFile = File(...), filename_hint:
         _os.unlink(tmp_path)
 
     src_lang = detect_language(header_text, _name)
-
     header_en = header_text
     if not src_lang.startswith("en") and header_text.strip():
         header_en = translate_to_english(header_text[:4000], src_lang)
 
     meta = extract_metadata(header_en, _name)
 
-    # Only call LLM when we have enough text to work with — skip for scanned/empty PDFs
-    # to avoid a slow call that returns nothing useful.
     has_text = len(header_en.strip()) > 80
     missing_key_fields = not meta["patent_number"] or not meta["title"] or not meta["assignee"]
     if has_text and missing_key_fields:
@@ -132,6 +134,10 @@ async def extract_metadata_endpoint(file: UploadFile = File(...), filename_hint:
 
     return {**meta, "detected_language": src_lang, "translated": not src_lang.startswith("en")}
 
+
+# ---------------------------------------------------------------------------
+# Ingestion
+# ---------------------------------------------------------------------------
 
 @router.post("/api/v1/ingest")
 async def ingest_from_browser(
@@ -162,6 +168,10 @@ async def ingest_from_browser(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return result
 
+
+# ---------------------------------------------------------------------------
+# Patent CRUD
+# ---------------------------------------------------------------------------
 
 @router.get("/api/v1/patents")
 async def list_patents(jurisdiction: Optional[str] = None, assignee: Optional[str] = None):
@@ -210,9 +220,7 @@ async def update_patent(patent_id: str, body: PatentUpdateRequest):
         def _update():
             return (
                 state.supabase.table("patent_documents")
-                .update(fields)
-                .eq("id", patent_id)
-                .execute()
+                .update(fields).eq("id", patent_id).execute()
             )
         resp = await asyncio.to_thread(_update)
         if not resp.data:
@@ -226,21 +234,11 @@ async def update_patent(patent_id: str, body: PatentUpdateRequest):
 
 @router.delete("/api/v1/patents/{patent_id}", status_code=204)
 async def delete_patent(patent_id: str):
-    """Delete a patent and all its child rows.
-
-    Uses per-table batch sizes to stay within Supabase's statement timeout:
-    - patent_chunks: 50 per batch (rows are small — just text + embedding string)
-    - patent_images: 1 per batch (rows contain full PNG bytea, often 200 KB+;
-      deleting even a handful at once causes PostgreSQL to exceed the timeout)
-    """
     def _delete_in_batches(table: str, id_col: str, batch: int):
         while True:
             rows = (
                 state.supabase.table(table)
-                .select("id")
-                .eq(id_col, patent_id)
-                .limit(batch)
-                .execute()
+                .select("id").eq(id_col, patent_id).limit(batch).execute()
             ).data or []
             if not rows:
                 break
@@ -303,9 +301,6 @@ CONTENT:
 
 @router.get("/api/v1/patents/{patent_id}/images")
 async def list_patent_images(patent_id: str):
-    """Return metadata (id + page_number) for all stored figures of a patent.
-    Binary data is NOT included — use GET /api/v1/images/{image_id} to fetch each image.
-    """
     try:
         resp = await asyncio.to_thread(
             lambda: (
@@ -323,24 +318,17 @@ async def list_patent_images(patent_id: str):
 
 @router.get("/api/v1/images/{image_id}")
 async def serve_patent_image(image_id: str):
-    """Stream a single figure as a PNG image.
-    PostgREST returns bytea columns as \\x-prefixed hex strings; we decode here.
-    """
     try:
         resp = await asyncio.to_thread(
             lambda: (
                 state.supabase.table("patent_images")
-                .select("image_data")
-                .eq("id", image_id)
-                .single()
-                .execute()
+                .select("image_data").eq("id", image_id).single().execute()
             )
         )
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"Image not found: {exc}") from exc
 
     raw = resp.data.get("image_data", "")
-    # PostgREST hex format: "\x89504e47..." — strip the leading \x before decoding
     if isinstance(raw, str) and raw.startswith("\\x"):
         image_bytes = bytes.fromhex(raw[2:])
     elif isinstance(raw, (bytes, bytearray)):
@@ -350,6 +338,10 @@ async def serve_patent_image(image_id: str):
 
     return Response(content=image_bytes, media_type="image/png")
 
+
+# ---------------------------------------------------------------------------
+# Compare
+# ---------------------------------------------------------------------------
 
 @router.post("/api/v1/compare")
 async def compare_patents(req: CompareRequest):
@@ -372,13 +364,9 @@ async def compare_patents(req: CompareRequest):
         )
         if rows:
             return [r["content"] for r in rows]
-        return (
-            state.supabase.table("patent_chunks")
-            .select("content").eq("patent_id", patent_id)
-            .limit(20).execute().data or []
-        ) and [r["content"] for r in
-               state.supabase.table("patent_chunks").select("content")
-               .eq("patent_id", patent_id).limit(20).execute().data or []]
+        return [r["content"] for r in
+                state.supabase.table("patent_chunks").select("content")
+                .eq("patent_id", patent_id).limit(20).execute().data or []]
 
     try:
         a_contents, b_contents = await asyncio.to_thread(
@@ -389,10 +377,6 @@ async def compare_patents(req: CompareRequest):
 
     a_text = "\n\n".join(a_contents or [])
     b_text = "\n\n".join(b_contents or [])
-
-    log.info("compare | A=%s chunks=%d B=%s chunks=%d",
-             a_resp.data.get("patent_number"), len(a_contents or []),
-             b_resp.data.get("patent_number"), len(b_contents or []))
 
     similarity_score = 0.0
     if a_text.strip() and b_text.strip():
@@ -437,12 +421,9 @@ async def compare_patents(req: CompareRequest):
         ]:
             if key not in analysis:
                 analysis[key] = default
-        log.info("compare OK | risk=%s overlaps=%d",
-                 analysis.get("overall_risk"), len(analysis.get("overlapping_claims", [])))
     except HTTPException:
         raise
     except Exception as exc:
-        log.error("compare analysis error: %r", exc)
         raise HTTPException(status_code=500, detail=f"Analysis error: {exc}") from exc
 
     return {
@@ -453,11 +434,99 @@ async def compare_patents(req: CompareRequest):
     }
 
 
-@router.post("/api/v1/evaluate-design", response_model=DesignEvaluationResponse)
-async def evaluate_design(request: DesignEvaluationRequest):
-    log.info("evaluate-design | product_id=%s jurisdiction=%s",
+# ---------------------------------------------------------------------------
+# Phase 2 — Risk Analysis
+# ---------------------------------------------------------------------------
+
+@router.post("/api/v1/risk-analysis", response_model=RiskAnalysisResponse)
+async def risk_analysis(request: RiskAnalysisRequest):
+    """
+    Phase 2: Patent-level IP risk assessment.
+
+    New workflow:
+      Step 1 — Embed spec, retrieve independent claim chunks (hybrid RRF)
+      Step 2 — Aggregate chunks by patent, select top candidate patents
+      Step 3 — Fetch complete claim family (independent + dependent) per patent
+      Step 4 — Per-patent LLM assessment: matched/missing/unclear elements
+      Step 5 — Return structured per-patent results sorted by risk_score
+
+    Overall risk_status is derived from the highest individual patent risk_score:
+      >= 70 → HIGH, >= 40 → MEDIUM, >= 10 → LOW, < 10 → CLEAR
+    """
+    log.info("risk-analysis | product_id=%s jurisdiction=%s",
              request.product_id, request.jurisdiction)
 
+    try:
+        query_embedding = state.embed_model.encode(
+            [request.proposed_specifications], normalize_embeddings=True, show_progress_bar=False
+        )[0].tolist()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Embedding error: {exc}") from exc
+
+    patent_results = await asyncio.to_thread(
+        run_patent_risk_pipeline,
+        query_embedding,
+        request.proposed_specifications,
+        request.proposed_specifications,
+        request.component_scope,
+        request.jurisdiction,
+    )
+
+    if not patent_results:
+        return RiskAnalysisResponse(
+            product_id=request.product_id,
+            risk_status="CLEAR",
+            patent_assessments=[],
+            token_budget_used=0,
+        )
+
+    # Derive overall risk_status from the highest patent risk_score
+    top_score = patent_results[0].get("risk_score", 0)
+    if top_score >= 70:
+        overall_status = "HIGH"
+    elif top_score >= 40:
+        overall_status = "MEDIUM"
+    elif top_score >= 10:
+        overall_status = "LOW"
+    else:
+        overall_status = "CLEAR"
+
+    assessments = [PatentRiskResult(**r) for r in patent_results]
+
+    token_est = (len(request.proposed_specifications) + sum(
+        len(r.get("overlap_explanation", "")) for r in patent_results
+    )) // 4
+
+    return RiskAnalysisResponse(
+        product_id=request.product_id,
+        risk_status=overall_status,
+        patent_assessments=assessments,
+        token_budget_used=token_est,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Design Suggestions
+# ---------------------------------------------------------------------------
+
+@router.post("/api/v1/design-suggestions", response_model=DesignSuggestionResponse)
+async def design_suggestions(request: DesignSuggestionRequest):
+    """
+    Phase 3: Design suggestions built on top of risk analysis.
+
+    Step 1 — Run risk-analysis on the original spec (calls call_agent_risk).
+    Step 2 — Pass the risk output to call_agent_designer to propose alternative
+             designs that reduce or avoid the identified IP conflicts.
+    Step 3 — Run those proposals through call_agent_auditor (manufacturing check).
+
+    The risk analysis in Step 1 is the same logic as POST /api/v1/risk-analysis,
+    keeping both phases consistent. Your friend can extend Step 2 to call risk
+    repeatedly (once per proposal) to score each alternative.
+    """
+    log.info("design-suggestions | product_id=%s jurisdiction=%s",
+             request.product_id, request.jurisdiction)
+
+    # Step 1: embed + retrieve
     try:
         query_embedding = state.embed_model.encode(
             [request.proposed_specifications], normalize_embeddings=True, show_progress_bar=False
@@ -470,30 +539,49 @@ async def evaluate_design(request: DesignEvaluationRequest):
     )
 
     if not raw_chunks:
-        return DesignEvaluationResponse(
-            product_id=request.product_id, risk_status="CLEAR",
-            infringement_map=[], design_arounds=[],
-            matched_chunks=[], token_budget_used=0,
+        return DesignSuggestionResponse(
+            product_id=request.product_id,
+            original_risk_status="CLEAR",
+            suggestions=[],
+            proposals_generated=0,
+            proposals_passed=0,
         )
 
-    chunk_refs = [
-        ChunkReference(**{k: c.get(k, "") for k in ChunkReference.model_fields},
-                       rrf_score=float(c.get("rrf_score", 0.0)))
-        for c in raw_chunks
-    ]
     context_block = build_context_block(raw_chunks)
-    gen_out = call_agent_generator(context_block, request.proposed_specifications, request.component_scope)
-    aud_out = call_agent_auditor(gen_out, request.component_scope)
-    merged_das = aud_out.get("design_arounds_merged", [])
-    token_est = (
-        len(context_block) + len(request.proposed_specifications) + len(json.dumps(gen_out))
-    ) // 4
 
-    return DesignEvaluationResponse(
+    # Step 2: risk assessment on the original spec
+    risk_out = await asyncio.to_thread(
+        call_agent_risk, context_block, request.proposed_specifications, request.component_scope
+    )
+    original_risk = risk_out.get("risk_status", "UNKNOWN")
+    log.info("design-suggestions | original risk=%s", original_risk)
+
+    # Step 3: generate design suggestions — re-scores each via call_agent_risk,
+    # returns only LOW/CLEAR proposals
+    surviving_das = await asyncio.to_thread(
+        call_agent_designer,
+        request.proposed_specifications,
+        request.component_scope,
+        risk_out,
+        context_block,
+        state.embed_model,
+        request.jurisdiction,
+    )
+
+    proposals_generated = 2  # designer always proposes 2
+    proposals_passed = len(surviving_das)
+    log.info("design-suggestions | %d/%d proposals passed risk filter",
+             proposals_passed, proposals_generated)
+
+    # Step 4: manufacturing audit on surviving proposals only
+    audited_das = await asyncio.to_thread(
+        call_agent_auditor, surviving_das, request.component_scope
+    )
+
+    return DesignSuggestionResponse(
         product_id=request.product_id,
-        risk_status=aud_out.get("risk_status", "UNKNOWN"),
-        infringement_map=aud_out.get("infringement_map", []),
-        design_arounds=merged_das,
-        matched_chunks=chunk_refs,
-        token_budget_used=token_est,
+        original_risk_status=original_risk,
+        suggestions=audited_das,
+        proposals_generated=proposals_generated,
+        proposals_passed=proposals_passed,
     )

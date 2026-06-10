@@ -1,0 +1,404 @@
+{% extends "base.html" %}
+{% block title %}Innovation Opportunities{% endblock %}
+{% block breadcrumb %}Innovation Opportunities{% endblock %}
+{% block content %}
+<div class="p-7 flex flex-col gap-5" x-data="innovationPage()" x-init="init()">
+
+  <!-- Header -->
+  <div class="flex items-start justify-between">
+    <div>
+      <h1 class="font-display text-2xl font-bold text-white tracking-tight">Innovation Opportunities</h1>
+      <p class="mt-1 text-sm" style="color:var(--text2)">Analyse patterns across the patent corpus to surface technology gaps, whitespace areas, and directions for novel IP development.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 px-3 py-2 rounded-lg" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.35)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex-shrink:0">
+          <path d="M12 2L2 19h20L12 2z" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 9v4M12 16h.01" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <span style="font-size:11px;font-weight:600;color:#fbbf24;letter-spacing:0.04em">🚧 Under Construction</span>
+      </div>
+      <a href="/design-suggestions" class="btn btn-secondary" style="font-size:12px;padding:7px 16px">← Design Suggestions</a>
+    </div>
+  </div>
+
+  <!-- Stats row -->
+  <div class="grid grid-cols-4 gap-3">
+    <div class="card p-4 flex flex-col gap-1" style="border-radius:14px">
+      <p class="label">Patents Analysed</p>
+      <p class="font-display text-2xl font-bold text-white" x-text="stats.patent_count ?? '—'"></p>
+      <p class="text-xs" style="color:var(--text3)">In corpus</p>
+    </div>
+    <div class="card p-4 flex flex-col gap-1" style="border-radius:14px">
+      <p class="label">Technology Clusters</p>
+      <p class="font-display text-2xl font-bold" style="color:var(--accent-g)" x-text="stats.cluster_count ?? '—'"></p>
+      <p class="text-xs" style="color:var(--text3)">Detected</p>
+    </div>
+    <div class="card p-4 flex flex-col gap-1" style="border-radius:14px">
+      <p class="label">Gap Areas</p>
+      <p class="font-display text-2xl font-bold" style="color:var(--teal)" x-text="stats.gap_count ?? '—'"></p>
+      <p class="text-xs" style="color:var(--text3)">Identified</p>
+    </div>
+    <div class="card p-4 flex flex-col gap-1" style="border-radius:14px">
+      <p class="label">Innovation Vectors</p>
+      <p class="font-display text-2xl font-bold" style="color:var(--emerald)" x-text="stats.vector_count ?? '—'"></p>
+      <p class="text-xs" style="color:var(--text3)">Generated</p>
+    </div>
+  </div>
+
+  <!-- Input card -->
+  <div class="card p-5" style="border-radius:16px">
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      <div>
+        <p class="label mb-1.5">Technology Domain</p>
+        <input x-model="form.domain" type="text" placeholder="e.g. Automotive laminated glass" class="w-full px-3 py-2.5 text-sm"/>
+      </div>
+      <div>
+        <p class="label mb-1.5">Analysis Scope</p>
+        <select x-model="form.scope" class="w-full px-3 py-2.5 text-sm">
+          <option value="full">Full Corpus</option>
+          <option value="claims">Claims Only</option>
+          <option value="description">Descriptions Only</option>
+        </select>
+      </div>
+      <div>
+        <p class="label mb-1.5">Jurisdiction Filter</p>
+        <select x-model="form.jurisdiction" class="w-full px-3 py-2.5 text-sm">
+          <option value="ALL">🌍 All Jurisdictions</option>
+          {% for jx in jurisdictions %}
+          <option value="{{ jx }}">{{ jx }} patents only</option>
+          {% endfor %}
+        </select>
+        <p class="mt-1.5 text-xs" style="color:var(--text3)">Limit gap analysis to a specific patent office.</p>
+      </div>
+    </div>
+    <div class="mb-4">
+      <p class="label mb-1.5">Focus Prompt <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></p>
+      <textarea x-model="form.focus" rows="3"
+        placeholder="Describe a specific technical area or product challenge you want to explore — e.g. 'acoustic damping in laminated windshields', 'HUD-compatible PVB interlayers'…"
+        class="w-full px-3 py-3 text-sm resize-none" style="line-height:1.7"></textarea>
+    </div>
+    <div class="flex items-center gap-3">
+      <button class="btn btn-primary" style="padding:10px 28px" @click="runAnalysis()" :disabled="loading">
+        <span x-show="!loading" class="flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="currentColor"/>
+          </svg>
+          Discover Innovation Opportunities
+        </span>
+        <span x-show="loading" class="flex items-center gap-2">
+          <div class="spinner" style="width:14px;height:14px"></div>Scanning Patent Corpus…
+        </span>
+      </button>
+      <button class="btn btn-secondary" @click="reset()">Clear</button>
+      <div class="ml-3 flex items-center gap-2">
+        <div style="width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 6px var(--teal)"></div>
+        <span class="text-xs" style="color:var(--text3)">Pattern detection · Gap analysis · Innovation vector generation</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error banner -->
+  <div x-show="errorMsg" x-transition class="card p-4 flex items-start gap-3"
+       style="border-radius:12px;border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.06)">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:2px">
+      <circle cx="12" cy="12" r="10" stroke="#fbbf24" stroke-width="1.8"/>
+      <path d="M12 8v4M12 16h.01" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <p class="text-xs leading-relaxed" style="color:var(--text2)" x-text="errorMsg"></p>
+  </div>
+
+  <!-- Results -->
+  <div x-show="result" x-transition class="flex flex-col gap-5">
+
+    <!-- Summary bar -->
+    <div class="card p-5 flex items-center gap-5" style="border-radius:16px">
+      <div>
+        <p class="label mb-1">Domain</p>
+        <p class="font-mono text-sm text-white" x-text="result ? result.domain : ''"></p>
+      </div>
+      <div style="width:1px;height:36px;background:var(--border)"></div>
+      <div>
+        <p class="label mb-1">Clusters Found</p>
+        <p class="font-mono text-sm text-white" x-text="result ? (result.clusters?.length ?? 0) + ' clusters' : ''"></p>
+      </div>
+      <div style="width:1px;height:36px;background:var(--border)"></div>
+      <div>
+        <p class="label mb-1">Gap Areas</p>
+        <p class="font-mono text-sm text-white" x-text="result ? (result.gaps?.length ?? 0) + ' gaps' : ''"></p>
+      </div>
+      <div style="width:1px;height:36px;background:var(--border)"></div>
+      <div>
+        <p class="label mb-1">Innovation Vectors</p>
+        <span class="badge badge-info font-mono" x-text="result ? (result.innovations?.length ?? 0) + ' ideas' : ''"></span>
+      </div>
+    </div>
+
+    <!-- Three-column layout: Clusters | Gaps | Innovation Vectors -->
+    <div class="grid gap-4" style="grid-template-columns:1fr 1fr 1.2fr">
+
+      <!-- Technology Clusters -->
+      <div class="card flex flex-col overflow-hidden" style="border-radius:16px;max-height:520px">
+        <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border);flex-shrink:0">
+          <div>
+            <p class="label">Technology Clusters</p>
+            <p class="text-xs mt-0.5" style="color:var(--text3)">Recurring themes across patents</p>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="color:var(--accent-g)">
+            <circle cx="18" cy="5" r="3" stroke="currentColor" stroke-width="1.8"/>
+            <circle cx="6" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/>
+            <circle cx="18" cy="19" r="3" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M8.59 13.51l6.83 3.98M15.41 10.49L8.59 6.51" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div style="overflow-y:auto;flex:1">
+          <template x-for="(cluster, i) in (result?.clusters ?? [])" :key="i">
+            <div class="px-5 py-4 fade-up" style="border-bottom:1px solid var(--border)" :style="`animation-delay:${i*0.05}s`">
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-mono text-xs font-bold px-2 py-0.5 rounded"
+                  style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:#818cf8"
+                  x-text="'C' + (i+1).toString().padStart(2,'0')"></span>
+                <span class="badge badge-info font-mono text-xs" x-text="cluster.patent_count + ' patents'"></span>
+              </div>
+              <p class="text-sm text-white font-medium mb-1" x-text="cluster.name"></p>
+              <p class="text-xs leading-relaxed" style="color:var(--text2)" x-text="cluster.summary"></p>
+            </div>
+          </template>
+          <!-- Empty state -->
+          <div x-show="!result?.clusters?.length" class="flex flex-col items-center justify-center py-14 gap-3">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" style="opacity:0.25">
+              <circle cx="18" cy="5" r="3" stroke="currentColor" stroke-width="1.8"/>
+              <circle cx="6" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/>
+              <circle cx="18" cy="19" r="3" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M8.59 13.51l6.83 3.98M15.41 10.49L8.59 6.51" stroke="currentColor" stroke-width="1.8"/>
+            </svg>
+            <p class="text-xs" style="color:var(--text3)">No clusters yet</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Patent Gaps -->
+      <div class="card flex flex-col overflow-hidden" style="border-radius:16px;max-height:520px">
+        <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border);flex-shrink:0">
+          <div>
+            <p class="label">Patent Gaps</p>
+            <p class="text-xs mt-0.5" style="color:var(--text3)">Underprotected whitespace areas</p>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="color:var(--teal)">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div style="overflow-y:auto;flex:1">
+          <template x-for="(gap, i) in (result?.gaps ?? [])" :key="i">
+            <div class="px-5 py-4 fade-up" style="border-bottom:1px solid var(--border)" :style="`animation-delay:${i*0.07}s`">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="badge font-mono text-xs"
+                  :class="gap.opportunity_level==='HIGH' ? 'badge-high' : gap.opportunity_level==='MEDIUM' ? 'badge-medium' : 'badge-low'"
+                  x-text="gap.opportunity_level + ' OPPORTUNITY'"></span>
+              </div>
+              <p class="text-sm text-white font-medium mb-1" x-text="gap.area"></p>
+              <p class="text-xs leading-relaxed" style="color:var(--text2)" x-text="gap.description"></p>
+              <template x-if="gap.related_patents?.length">
+                <p class="mt-2 font-mono text-xs" style="color:var(--text3)" x-text="'Related: ' + gap.related_patents.join(', ')"></p>
+              </template>
+            </div>
+          </template>
+          <!-- Empty state -->
+          <div x-show="!result?.gaps?.length" class="flex flex-col items-center justify-center py-14 gap-3">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" style="opacity:0.25">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8"/>
+            </svg>
+            <p class="text-xs" style="color:var(--text3)">No gaps identified yet</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Innovation Vectors -->
+      <div class="card flex flex-col overflow-hidden" style="border-radius:16px;max-height:520px">
+        <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border);flex-shrink:0">
+          <div>
+            <p class="label">Innovation Vectors</p>
+            <p class="text-xs mt-0.5" style="color:var(--text3)">Actionable directions for new IP · Scored by feasibility</p>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="color:var(--emerald)">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div style="overflow-y:auto;flex:1">
+          <template x-for="(idea, i) in (result?.innovations ?? [])" :key="i">
+            <div class="px-5 py-5 fade-up glow-card" style="border-bottom:1px solid var(--border)" :style="`animation-delay:${i*0.09}s`">
+              <div class="flex items-center gap-2 mb-3">
+                <span class="font-mono text-xs font-bold px-2 py-0.5 rounded"
+                  style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);color:#34d399"
+                  x-text="'IV' + (i+1).toString().padStart(2,'0')"></span>
+                <span class="badge badge-low text-xs flex items-center gap-1">
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                  <span x-text="idea.feasibility + ' Feasibility'"></span>
+                </span>
+                <span class="badge badge-info text-xs" x-text="idea.novelty + ' Novelty'"></span>
+              </div>
+              <p class="text-sm text-white font-semibold mb-2 leading-snug" x-text="idea.title"></p>
+              <p class="text-xs leading-relaxed mb-3" style="color:var(--text2)" x-text="idea.description"></p>
+              <div class="px-3 py-2 rounded-lg" style="background:rgba(16,185,129,0.05);border:1px solid rgba(16,185,129,0.12)">
+                <p class="label mb-1" style="color:#34d399">Why This Gap Exists</p>
+                <p class="text-xs leading-relaxed" style="color:var(--text2)" x-text="idea.gap_rationale"></p>
+              </div>
+              <template x-if="idea.addresses_clusters?.length">
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                  <template x-for="c in idea.addresses_clusters" :key="c">
+                    <span class="font-mono text-xs px-2 py-0.5 rounded"
+                      style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);color:var(--accent-g)"
+                      x-text="c"></span>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </template>
+          <!-- Empty state -->
+          <div x-show="!result?.innovations?.length" class="flex flex-col items-center justify-center py-14 gap-3">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" style="opacity:0.25">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke="currentColor" stroke-width="1.8"/>
+            </svg>
+            <p class="text-xs" style="color:var(--text3)">No innovation vectors yet</p>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end 3-col grid -->
+
+    <!-- Trend timeline -->
+    <div class="card flex flex-col overflow-hidden" style="border-radius:16px">
+      <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border)">
+        <div>
+          <p class="label">Publication Trend</p>
+          <p class="text-xs mt-0.5" style="color:var(--text3)">Patent filings over time in this domain</p>
+        </div>
+        <span class="badge badge-info font-mono" x-show="result?.trend_data?.length" x-text="result?.trend_data?.length + ' years'"></span>
+      </div>
+      <div class="px-5 py-4">
+        <!-- Bar chart rendered inline via SVG -->
+        <template x-if="result?.trend_data?.length">
+          <div style="height:80px;display:flex;align-items:flex-end;gap:4px">
+            <template x-for="(bar, i) in result.trend_data" :key="i">
+              <div class="flex flex-col items-center gap-1" style="flex:1">
+                <div class="w-full rounded-t transition-all duration-700"
+                  style="background:linear-gradient(to top,rgba(99,102,241,0.6),rgba(6,182,212,0.4));min-height:4px"
+                  :style="`height:${Math.max(4, (bar.count / Math.max(...result.trend_data.map(d=>d.count))) * 64)}px`"></div>
+                <span class="font-mono text-xs" style="color:var(--text3)" x-text="String(bar.year).slice(2)"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+        <div x-show="!result?.trend_data?.length" class="flex items-center justify-center py-6">
+          <p class="text-xs" style="color:var(--text3)">No trend data available</p>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end results -->
+
+  <!-- Pre-run placeholder -->
+  <div x-show="!result && !loading" class="card flex flex-col items-center justify-center py-20 gap-4" style="border-radius:16px;border-style:dashed">
+    <div style="width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,rgba(99,102,241,0.15),rgba(6,182,212,0.1));border:1px solid rgba(99,102,241,0.2);display:flex;align-items:center;justify-content:center">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="color:var(--accent-g)">
+        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="text-center">
+      <p class="text-sm font-medium text-white mb-1">No Analysis Run Yet</p>
+      <p class="text-xs max-w-xs text-center leading-relaxed" style="color:var(--text3)">Select a technology domain, optionally add a focus prompt, and click <strong style="color:var(--text2)">Discover Innovation Opportunities</strong> to begin.</p>
+    </div>
+    <div class="flex items-center gap-3 mt-1">
+      <a href="/summaries" class="qlink">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        View Summaries
+      </a>
+      <a href="/risk" class="qlink">⚠ Risk Analysis</a>
+      <a href="/design-suggestions" class="qlink">✦ Design Suggestions</a>
+    </div>
+  </div>
+
+</div><!-- end Alpine root -->
+
+<script>
+function innovationPage() {
+  return {
+    loading: false,
+    result: null,
+    errorMsg: '',
+    form: {
+      domain: '',
+      scope: 'full',
+      jurisdiction: 'ALL',
+      focus: '',
+    },
+    stats: {
+      patent_count: null,
+      cluster_count: null,
+      gap_count: null,
+      vector_count: null,
+    },
+    init() {
+      try {
+        const saved = sessionStorage.getItem('innovation_last_result');
+        if (saved) {
+          this.result = JSON.parse(saved);
+          this._updateStats();
+        }
+        const savedForm = sessionStorage.getItem('innovation_last_form');
+        if (savedForm) this.form = { ...this.form, ...JSON.parse(savedForm) };
+      } catch(e) {}
+    },
+    _updateStats() {
+      if (!this.result) return;
+      this.stats.cluster_count = this.result.clusters?.length ?? 0;
+      this.stats.gap_count     = this.result.gaps?.length ?? 0;
+      this.stats.vector_count  = this.result.innovations?.length ?? 0;
+      this.stats.patent_count  = this.result.patent_count ?? null;
+    },
+    reset() {
+      this.result = null;
+      this.errorMsg = '';
+      this.form.domain = '';
+      this.form.focus = '';
+      this.stats = { patent_count: null, cluster_count: null, gap_count: null, vector_count: null };
+      sessionStorage.removeItem('innovation_last_result');
+      sessionStorage.removeItem('innovation_last_form');
+    },
+    async runAnalysis() {
+      this.loading = true;
+      this.result = null;
+      this.errorMsg = '';
+      try {
+        const r = await fetch('/api/v1/innovation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            domain:      this.form.domain,
+            scope:       this.form.scope,
+            jurisdiction: this.form.jurisdiction,
+            focus_prompt: this.form.focus,
+          }),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          this.errorMsg = data.detail || 'Unknown error';
+          return;
+        }
+        this.result = data;
+        this._updateStats();
+        try {
+          sessionStorage.setItem('innovation_last_result', JSON.stringify(data));
+          sessionStorage.setItem('innovation_last_form', JSON.stringify(this.form));
+        } catch(e) {}
+      } catch(e) {
+        this.errorMsg = 'Network error: ' + e.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+  }
+}
+</script>
+{% endblock %}

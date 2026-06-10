@@ -1,19 +1,13 @@
 """
 app/routes/ui.py — Server-side rendered page routes (Jinja2 templates).
 
-Serves the five HTML pages of the UI. Each route fetches minimal data from
-Supabase to populate the page, then delegates all rendering to a Jinja2 template
-in the /templates directory.
-
 Routes:
-  GET /             → redirects to /upload
-  GET /upload       → patent upload form; shows last 20 ingested patents
-  GET /summaries    → browsable list of all patents with LLM summary links
-  GET /compare      → side-by-side patent comparison page
-  GET /playground   → free-form design-around exploration UI
-
-All Supabase calls are wrapped with asyncio.to_thread() because the supabase-py
-client is synchronous and would otherwise block the async event loop.
+  GET /                   → redirects to /upload
+  GET /upload             → patent upload form
+  GET /summaries          → browsable list of all patents
+  GET /risk               → Phase 2 — IP risk analysis
+  GET /design-suggestions → Phase 3 — design suggestions built on risk output
+  GET /innovation         → Phase 4 — innovation opportunities or improvement ideas for gaps or common patterns 
 """
 import asyncio
 import logging
@@ -65,20 +59,61 @@ async def page_summaries(request: Request):
     return templates.TemplateResponse(request=request, name="summaries.html", context={"patents": patents})
 
 
-@router.get("/compare", include_in_schema=False)
-async def page_compare(request: Request):
+@router.get("/risk", include_in_schema=False)
+async def page_risk(request: Request):
+    """Phase 2 — IP risk identification for a proposed product design."""
     try:
         patents = await asyncio.to_thread(
             lambda: (
                 state.supabase.table("patent_documents")
-                .select("id,patent_number,title,assignee,jurisdiction").execute().data or []
+                .select("id,patent_number,title,jurisdiction")
+                .order("created_at", desc=True).execute().data or []
             )
         )
     except Exception:
         patents = []
-    return templates.TemplateResponse(request=request, name="compare.html", context={"patents": patents})
+    jurisdictions = sorted(set(p["jurisdiction"] for p in patents if p.get("jurisdiction")))
+    return templates.TemplateResponse(
+        request=request, name="risk.html",
+        context={"patents": patents, "jurisdictions": jurisdictions}
+    )
 
 
-@router.get("/playground", include_in_schema=False)
-async def page_playground(request: Request):
-    return templates.TemplateResponse(request=request, name="playground.html", context={})
+@router.get("/design-suggestions", include_in_schema=False)
+async def page_design_suggestions(request: Request):
+    """Phase 3 — Design suggestions built on top of risk analysis."""
+    try:
+        patents = await asyncio.to_thread(
+            lambda: (
+                state.supabase.table("patent_documents")
+                .select("jurisdiction")
+                .execute().data or []
+            )
+        )
+    except Exception:
+        patents = []
+    jurisdictions = sorted(set(p["jurisdiction"] for p in patents if p.get("jurisdiction")))
+    return templates.TemplateResponse(
+        request=request, name="design-suggestions.html",
+        context={"jurisdictions": jurisdictions}
+    )
+
+
+@router.get("/innovation", include_in_schema=False)
+async def page_innovation(request: Request):
+    """Phase 4 — Innovation opportunities: gap analysis and new IP directions."""
+    try:
+        patents = await asyncio.to_thread(
+            lambda: (
+                state.supabase.table("patent_documents")
+                .select("jurisdiction")
+                .execute().data or []
+            )
+        )
+    except Exception:
+        patents = []
+    jurisdictions = sorted(set(p["jurisdiction"] for p in patents if p.get("jurisdiction")))
+    return templates.TemplateResponse(
+        request=request, name="innovation.html",
+        context={"jurisdictions": jurisdictions}
+    )

@@ -45,7 +45,7 @@ settings = Settings()
 
 # Embedding
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
-LLM_MAX_TOKENS = 1024
+LLM_MAX_TOKENS = 2048
 TOP_K_CHUNKS = 3
 
 # PDF processing

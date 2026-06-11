@@ -178,9 +178,9 @@
               <p x-show="!p.matched_elements || !p.matched_elements.length" class="text-xs" style="color:var(--text3)">None identified</p>
             </div>
 
-            <!-- Missing -->
+            <!-- Potential Protective Difference -->
             <div class="px-3 py-3 rounded-lg" style="background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.15)">
-              <p class="label mb-2" style="color:#818cf8">Missing Elements</p>
+              <p class="label mb-2" style="color:#818cf8">Potential Protective Difference</p>
               <template x-if="p.missing_elements && p.missing_elements.length">
                 <ul class="flex flex-col gap-1">
                   <template x-for="el in p.missing_elements" :key="el">

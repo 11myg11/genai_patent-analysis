@@ -71,6 +71,10 @@ CLAIM_DEP_RE = re.compile(
 )
 CLAIM_NUM_RE = re.compile(r"^\s*\d{1,3}\.\s")
 
+# Used by split_into_chunks to detect a numbered claim boundary regardless of
+# surrounding whitespace — e.g. "7. The laminate comprising…"
+CLAIM_BOUNDARY_RE = re.compile(r"(?=^\s*\d{1,3}\.\s)", re.MULTILINE)
+
 # Matches numbered claims that reference another claim → dependent
 # e.g. "7. The laminate of claim 1, wherein..." or "3. The method of claim 2..."
 CLAIM_DEP_REF_RE = re.compile(
@@ -146,21 +150,61 @@ def determine_section_type(text: str) -> str:
 
 
 def split_into_chunks(full_text: str) -> List[Dict[str, str]]:
-    paragraphs = re.split(r"\n{2,}", full_text)
-    chunks: List[Dict[str, str]] = []
-    buffer = ""
-    for para in paragraphs:
+    """
+    Split document text into labelled chunks.
+
+    Two-pass strategy:
+    Pass 1 — Split on double newlines (paragraph boundaries) as before.
+    Pass 2 — Within each paragraph, also split on numbered claim boundaries
+             (e.g. "7. The laminate…") so that claims not separated by blank
+             lines still get their own chunk.
+
+    Fix 3: claim-aware re-split ensures claims without blank lines between them
+           are not merged into one unclassifiable blob.
+    Fix 4: merge guard — short paragraphs that START with a claim number are
+           never merged into the previous buffer, preventing claim beginnings
+           from being swallowed into the preceding description chunk.
+    """
+    # Pass 1 — split on blank lines
+    raw_paragraphs = re.split(r"\n{2,}", full_text)
+
+    # Pass 2 — re-split each paragraph on numbered claim boundaries
+    paragraphs: List[str] = []
+    for para in raw_paragraphs:
         para = para.strip()
         if not para:
             continue
-        if buffer and len(para) < 80:
+        # If this paragraph contains more than one numbered item, split it further
+        sub_parts = CLAIM_BOUNDARY_RE.split(para)
+        if len(sub_parts) > 1:
+            paragraphs.extend(p.strip() for p in sub_parts if p.strip())
+        else:
+            paragraphs.append(para)
+
+    # Merge short fragments — but never merge a claim-starting paragraph
+    chunks: List[Dict[str, str]] = []
+    buffer = ""
+    for para in paragraphs:
+        if not para:
+            continue
+        is_claim_start = bool(CLAIM_NUM_RE.match(para))  # Fix 4 — guard
+        if buffer and len(para) < 80 and not is_claim_start:
+            # Safe to merge — short non-claim fragment
             buffer += " " + para
         else:
             if buffer:
-                chunks.append({"section_type": determine_section_type(buffer), "content": buffer})
+                chunks.append({
+                    "section_type": determine_section_type(buffer),
+                    "content":      buffer,
+                })
             buffer = para
+
     if buffer:
-        chunks.append({"section_type": determine_section_type(buffer), "content": buffer})
+        chunks.append({
+            "section_type": determine_section_type(buffer),
+            "content":      buffer,
+        })
+
     return [c for c in chunks if len(c["content"]) >= 10]
 
 

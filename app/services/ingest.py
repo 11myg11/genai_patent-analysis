@@ -138,17 +138,20 @@ def ingest_pdf(
         patent_id: str = db_resp.data[0]["id"]
         log.info("Upserted patent_documents → id=%s", patent_id)
 
-        # Extract text from all pages
-        all_chunks: List[Dict[str, str]] = []
+        # Extract text from all pages into one full-document string first (Fix 1).
+        # Processing page-by-page caused claims that span page boundaries to be
+        # split into two incomplete fragments, neither of which was classifiable.
+        full_text = ""
         total_pages = len(doc)
         for page_num in range(total_pages):
             try:
-                text = extract_page_text(doc[page_num], src_lang)
-                if text:
-                    all_chunks.extend(split_into_chunks(text))
+                page_text = extract_page_text(doc[page_num], src_lang)
+                if page_text:
+                    full_text += page_text + "\n\n"
             except Exception as exc:
                 log.warning("Page %d error (skipping): %s", page_num + 1, exc)
 
+        all_chunks = split_into_chunks(full_text)
         all_chunks = [c for c in all_chunks if len(c["content"]) >= 10]
         log.info("Extracted %d chunks from %d pages", len(all_chunks), total_pages)
 

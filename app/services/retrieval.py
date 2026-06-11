@@ -32,9 +32,9 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-TOP_CANDIDATE_PATENTS = 5   # max patents to expand into full claim family
-CLAIM_INDEPENDENT_LIMIT = 800   # chars — full independent claims are legally critical
-CLAIM_DEPENDENT_LIMIT   = 400   # chars — dependent claims can be shorter
+TOP_CANDIDATE_PATENTS = 2   # max patents to expand into full claim family
+CLAIM_INDEPENDENT_LIMIT = 400   # chars — full independent claims are legally critical
+CLAIM_DEPENDENT_LIMIT   = 200   # chars — dependent claims can be shorter
 
 
 # Priority weights for section types — used in candidate patent scoring
@@ -241,9 +241,10 @@ Rules:
 - matched_elements: claim elements clearly present in the proposed design.
 - missing_elements: claim elements clearly absent from the proposed design.
 - unclear_elements: claim elements that cannot be determined without more information.
-- overlap_explanation: 2-3 sentence plain English explanation of the technical overlap.
+- overlap_explanation: 1-2 sentence plain English explanation of the technical overlap.
 - Base your analysis on claim language, NOT on semantic similarity alone.
 - Fuyao manufacturing context: glass thickness {GLASS_TOTAL_MIN}-{GLASS_TOTAL_MAX}mm, PVB interlayer {PVB_MIN_MM}-{PVB_MAX_MM}mm.
+- You have limited output space. If running long, stop adding elements and close the JSON immediately.
 
 COMPONENT SCOPE: {component_scope}
 PROPOSED DESIGN:

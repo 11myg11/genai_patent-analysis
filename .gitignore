@@ -20,3 +20,6 @@ venv/
 uploads/        # ← temp PDF uploads, no need to push
 *.egg-info/
 dist/
+
+# VS code
+.vscode/

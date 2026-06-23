@@ -518,11 +518,15 @@ async def design_suggestions(request: DesignSuggestionRequest):
     """
     Phase 3: Design suggestions built on top of risk analysis.
 
-      Step 1 — Embed spec, run run_patent_risk_pipeline (same as Phase 2).
+      Step 1 — Embed spec, run run_patent_risk_pipeline (same as Phase 2). If every
+               assessed patent has risk_score == 0 and no matched_elements (truly no
+               risk, not just a low/CLEAR label), skip straight to an empty response —
+               nothing to design around.
       Step 2 — Pass structured patent_assessments to call_agent_designer, which
                proposes 2 alternatives and re-scores each via run_patent_risk_pipeline.
                Only LOW/CLEAR proposals survive.
-      Step 3 — Run surviving proposals through call_agent_auditor (manufacturing check).
+      Step 3 — Run surviving proposals through call_agent_auditor (manufacturing check,
+               cross-checked against the original spec to catch invented baselines).
     """
     log.info("design-suggestions | product_id=%s jurisdiction=%s",
              request.product_id, request.jurisdiction)
@@ -557,6 +561,25 @@ async def design_suggestions(request: DesignSuggestionRequest):
     log.info("design-suggestions | original risk=%s (top score=%d)",
              original_risk, patent_results[0].get("risk_score", 0))
 
+    # Skip the designer entirely when there is truly no risk signal at all — not just
+    # a low/CLEAR label (which still allows risk_score up to 9), but risk_score == 0
+    # AND no matched_elements on every assessed patent. Generating "design-arounds" for
+    # a spec with no actual overlap wastes tokens and risks the designer inventing
+    # unnecessary, less realistic changes to dodge generic, non-distinguishing terms.
+    no_real_risk = all(
+        r.get("risk_score", 0) == 0 and not r.get("matched_elements")
+        for r in patent_results
+    )
+    if no_real_risk:
+        log.info("design-suggestions | no real risk on any candidate — skipping designer")
+        return DesignSuggestionResponse(
+            product_id=request.product_id,
+            original_risk_status=original_risk,
+            suggestions=[],
+            proposals_generated=0,
+            proposals_passed=0,
+        )
+
     # Step 2 — generate design-arounds, re-score each with run_patent_risk_pipeline
     surviving_das = await asyncio.to_thread(
         call_agent_designer,
@@ -568,14 +591,18 @@ async def design_suggestions(request: DesignSuggestionRequest):
     )
 
     proposals_generated = 2  # designer always proposes 2
-    proposals_passed    = len(surviving_das)
     log.info("design-suggestions | %d/%d proposals passed risk filter",
-             proposals_passed, proposals_generated)
+             len(surviving_das), proposals_generated)
 
-    # Step 3 — manufacturing audit on surviving proposals only
+    # Step 3 — manufacturing audit on surviving proposals only. Proposals that change
+    # the fundamental construction type are rejected here, not just rewritten — so the
+    # final count can be lower than the risk-filter survivor count above.
     audited_das = await asyncio.to_thread(
-        call_agent_auditor, surviving_das, request.component_scope
+        call_agent_auditor, surviving_das, request.component_scope, request.proposed_specifications
     )
+    proposals_passed = len(audited_das)
+    log.info("design-suggestions | %d/%d proposals passed manufacturing audit",
+             proposals_passed, len(surviving_das))
 
     return DesignSuggestionResponse(
         product_id=request.product_id,

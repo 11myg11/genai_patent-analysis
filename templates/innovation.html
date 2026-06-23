@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Innovation Opportunities{% endblock %}
-{% block breadcrumb %}Innovation Opportunities{% endblock %}
 {% block content %}
 <div class="p-7 flex flex-col gap-5" x-data="innovationPage()" x-init="init()">
 
@@ -18,7 +17,6 @@
         </svg>
         <span style="font-size:11px;font-weight:600;color:#fbbf24;letter-spacing:0.04em">🚧 Under Construction</span>
       </div>
-      <a href="/design-suggestions" class="btn btn-secondary" style="font-size:12px;padding:7px 16px">← Design Suggestions</a>
     </div>
   </div>
 
@@ -194,7 +192,7 @@
             <div class="px-5 py-4 fade-up" style="border-bottom:1px solid var(--border)" :style="`animation-delay:${i*0.07}s`">
               <div class="flex items-center gap-2 mb-2">
                 <span class="badge font-mono text-xs"
-                  :class="gap.opportunity_level==='HIGH' ? 'badge-high' : gap.opportunity_level==='MEDIUM' ? 'badge-medium' : 'badge-low'"
+                  :class="gap.opportunity_level==='HIGH' ? 'badge-low' : gap.opportunity_level==='MEDIUM' ? 'badge-medium' : 'badge-neutral'"
                   x-text="gap.opportunity_level + ' OPPORTUNITY'"></span>
               </div>
               <p class="text-sm text-white font-medium mb-1" x-text="gap.area"></p>
@@ -232,11 +230,12 @@
                 <span class="font-mono text-xs font-bold px-2 py-0.5 rounded"
                   style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);color:#34d399"
                   x-text="'IV' + (i+1).toString().padStart(2,'0')"></span>
-                <span class="badge badge-low text-xs flex items-center gap-1">
+                <span class="badge text-xs flex items-center gap-1"
+                  :class="idea.feasibility==='HIGH' ? 'badge-low' : idea.feasibility==='MEDIUM' ? 'badge-medium' : 'badge-neutral'">
                   <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                   <span x-text="idea.feasibility + ' Feasibility'"></span>
                 </span>
-                <span class="badge badge-info text-xs" x-text="idea.novelty + ' Novelty'"></span>
+                <span class="badge badge-neutral text-xs" x-text="idea.novelty + ' Novelty'"></span>
               </div>
               <p class="text-sm text-white font-semibold mb-2 leading-snug" x-text="idea.title"></p>
               <p class="text-xs leading-relaxed mb-3" style="color:var(--text2)" x-text="idea.description"></p>
@@ -315,7 +314,7 @@
         View Summaries
       </a>
       <a href="/risk" class="qlink">⚠ Risk Analysis</a>
-      <a href="/design-suggestions" class="qlink">✦ Design Suggestions</a>
+      <a href="/design-suggestions" class="qlink">✦ Design Improvements</a>
     </div>
   </div>
 

@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Upload{% endblock %}
-{% block breadcrumb %}Patent Upload{% endblock %}
 {% block content %}
 <div class="p-7 flex flex-col gap-6" x-data="uploadPage()" x-init="init()">
 
@@ -12,7 +11,6 @@
         Drop a PDF — metadata is auto-extracted and non-English documents are translated automatically.
       </p>
     </div>
-    <a href="/summaries" class="btn btn-secondary" style="text-decoration:none;font-size:12px;padding:7px 14px">View Library →</a>
   </div>
 
   <div class="grid grid-cols-1 xl:grid-cols-5 gap-5">
@@ -202,7 +200,7 @@
                     <div class="text-xs mt-0.5" style="color:var(--text2)" x-text="p.title.slice(0,35)+(p.title.length>35?'…':'')"></div>
                   </td>
                   <td class="text-xs" style="color:var(--text2)" x-text="p.assignee||'—'"></td>
-                  <td><span class="badge badge-info font-mono" x-text="p.jurisdiction"></span></td>
+                  <td><span class="badge badge-neutral font-mono" x-text="p.jurisdiction"></span></td>
                 </tr>
               </template>
               <tr x-show="recentPatents.length===0">

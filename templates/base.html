@@ -157,21 +157,6 @@
       display: flex; flex-direction: column;
       overflow: hidden;
     }
-    /* ── Topbar ── */
-    .topbar {
-      height: 56px; flex-shrink: 0;
-      display: flex; align-items: center;
-      padding: 0 28px; gap: 16px;
-      border-bottom: 1px solid var(--border);
-      background: rgba(13,19,32,0.6);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-    }
-    .breadcrumb {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 13px;
-    }
-    .breadcrumb-sep { color: var(--text3); }
     /* ── Cards ── */
     .card {
       background: rgba(20,30,46,0.8);
@@ -254,12 +239,6 @@
       background: rgba(255,255,255,0.08); color: #fff;
       border-color: var(--border2) !important;
     }
-    .btn-teal {
-      background: linear-gradient(135deg, #0891b2, #06b6d4);
-      color: #fff;
-      box-shadow: 0 4px 14px rgba(6,182,212,0.25);
-    }
-    .btn-teal:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(6,182,212,0.35); }
     /* ── Badges ── */
     .badge {
       display: inline-flex; align-items: center; gap: 4px;
@@ -271,6 +250,7 @@
     .badge-low    { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
     .badge-clear  { background: rgba(99,102,241,0.12); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.25); }
     .badge-info   { background: rgba(6,182,212,0.12);  color: #22d3ee; border: 1px solid rgba(6,182,212,0.25); }
+    .badge-neutral{ background: rgba(255,255,255,0.06); color: var(--text2); border: 1px solid rgba(255,255,255,0.12); }
     /* ── Section label ── */
     .label {
       font-size: 10px; font-weight: 600; letter-spacing: 0.12em;
@@ -389,7 +369,7 @@
 
       <a href="/design-suggestions" class="nav-link {% if page == '/design-suggestions' %}active{% endif %}">
         <span class="nav-icon" style="display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:inherit">✦</span>
-        <span>Design Suggestions</span>
+        <span>Design Improvements</span>
         <span class="nav-dot"></span>
       </a>
 
@@ -425,41 +405,6 @@
 
   <!-- ═══ MAIN AREA ══════════════════════════════════════════════ -->
   <div class="main-content">
-
-    <!-- Topbar -->
-    <div class="topbar">
-      <div class="breadcrumb">
-        <span style="color:var(--text3);font-size:12px">PatentOS</span>
-        <span class="breadcrumb-sep">›</span>
-        <span style="color:var(--text);font-weight:500;font-size:12px">{% block breadcrumb %}{% endblock %}</span>
-      </div>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
-        <!-- Quick-nav chips always visible -->
-        {% set page = request.url.path %}
-        {% if page != '/upload' %}
-        <a href="/upload" class="qlink">↑ Upload</a>
-        {% endif %}
-        {% if page != '/summaries' %}
-        <a href="/summaries" class="qlink" style="display:flex;align-items:center;gap:5px">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-            <path d="M8 7h8M8 11h8M8 15h5"/>
-          </svg>
-          Summaries
-        </a>
-        {% endif %}
-        {% if page != '/risk' %}
-        <a href="/risk" class="qlink">⚠ Risk Analysis</a>
-        {% endif %}
-        {% if page != '/design-suggestions' %}
-        <a href="/design-suggestions" class="qlink">✦ Design Suggestions</a>
-        {% endif %}
-        {% if page != '/innovation' %}
-        <a href="/innovation" class="qlink">★ Innovation</a>
-        {% endif %}
-      </div>
-    </div>
 
     <!-- Page content -->
     <div class="page-scroll">

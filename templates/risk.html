@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Risk Analysis{% endblock %}
-{% block breadcrumb %}Risk Analysis{% endblock %}
 {% block content %}
 <div class="p-7 flex flex-col gap-5" x-data="riskPage()" x-init="init()">
 
@@ -137,7 +136,7 @@
             <div class="flex items-center gap-3">
               <span class="font-mono text-sm font-bold" style="color:#818cf8" x-text="p.patent_number"></span>
               <span class="text-xs" style="color:var(--text2)" x-text="p.title"></span>
-              <span class="badge badge-info font-mono text-xs" x-text="p.jurisdiction"></span>
+              <span class="badge badge-neutral font-mono text-xs" x-text="p.jurisdiction"></span>
             </div>
             <!-- Risk score badge -->
             <div class="flex items-center gap-3">
@@ -231,7 +230,7 @@
         <p class="text-sm font-semibold text-white">Risk identified? Get design-around proposals.</p>
         <p class="text-xs mt-0.5" style="color:var(--text3)">Head to the Design &amp; Innovation tab to generate alternative designs that avoid IP conflicts.</p>
       </div>
-      <a href="/design-suggestions" class="btn btn-teal ml-auto" style="font-size:12px;padding:8px 20px;white-space:nowrap">Open Design &amp; Innovation →</a>
+      <a href="/design-suggestions" class="btn btn-secondary ml-auto" style="font-size:12px;padding:8px 20px;white-space:nowrap">Open Design Improvements →</a>
     </div>
 
   </div><!-- end results -->

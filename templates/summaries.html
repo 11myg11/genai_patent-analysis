@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Summaries{% endblock %}
-{% block breadcrumb %}Patent Library{% endblock %}
 {% block content %}
 <style>
   .patent-item { position:relative; }
@@ -114,7 +113,7 @@
      @keydown.arrow-right.window="lbNext()"
      @keydown.arrow-left.window="lbPrev()">
 
-<div class="flex" style="height:calc(100vh - 56px)">
+<div class="flex" style="height:100vh">
 
   <!-- Sidebar -->
   <div class="flex flex-col" style="width:280px;flex-shrink:0;border-right:1px solid var(--border);height:100%">
@@ -137,7 +136,7 @@
                   @mouseleave="$el.style.background=selected&&selected.id===p.id?'rgba(99,102,241,0.08)':'transparent'">
             <div class="flex items-center gap-2 mb-1" style="padding-right:54px">
               <span class="font-mono text-xs font-semibold" style="color:#818cf8" x-text="p.patent_number"></span>
-              <span class="badge badge-info" style="font-size:9px" x-text="p.jurisdiction"></span>
+              <span class="badge badge-neutral" style="font-size:9px" x-text="p.jurisdiction"></span>
             </div>
             <p class="text-xs leading-snug" style="color:var(--text);padding-right:54px" x-text="p.title.slice(0,55)+(p.title.length>55?'…':'')"></p>
             <p class="text-xs mt-1" style="color:var(--text3)" x-text="p.assignee||'Unknown assignee'"></p>
@@ -201,7 +200,7 @@
           <!-- Metadata cards (view mode) -->
           <div x-show="!editing" class="grid grid-cols-4 gap-3">
             <div class="card p-4" style="border-radius:12px"><p class="label mb-1.5">Patent No.</p><p class="font-mono text-sm font-semibold" style="color:#818cf8" x-text="selected.patent_number"></p></div>
-            <div class="card p-4" style="border-radius:12px"><p class="label mb-1.5">Jurisdiction</p><span class="badge badge-info" x-text="selected.jurisdiction"></span></div>
+            <div class="card p-4" style="border-radius:12px"><p class="label mb-1.5">Jurisdiction</p><span class="badge badge-neutral" x-text="selected.jurisdiction"></span></div>
             <div class="card p-4" style="border-radius:12px"><p class="label mb-1.5">Assignee</p><p class="text-sm text-white" x-text="selected.assignee||'—'"></p></div>
             <div class="card p-4" style="border-radius:12px"><p class="label mb-1.5">Published</p><p class="font-mono text-sm" x-text="selected.publication_date||'—'"></p></div>
           </div>
@@ -327,12 +326,7 @@
               <div class="chunk-modal">
                 <div class="chunk-modal-header">
                   <div class="flex items-center gap-3">
-                    <span class="badge"
-                          :class="{
-                            'badge-clear':  activeChunk && activeChunk.section_type==='claim_independent',
-                            'badge-medium': activeChunk && activeChunk.section_type==='claim_dependent',
-                            'badge-low':    activeChunk && activeChunk.section_type==='description'
-                          }"
+                    <span class="badge badge-neutral"
                           x-text="activeChunk ? activeChunk.section_type.replace('_',' ') : ''"></span>
                     <span class="text-xs font-mono" style="color:var(--text3)"
                           x-text="activeChunk ? selected.patent_number : ''"></span>
@@ -360,7 +354,7 @@
                 <tbody>
                   <template x-for="(c,i) in chunks" :key="i">
                     <tr class="chunk-row" @click="activeChunk=c">
-                      <td style="width:140px"><span class="badge" :class="{'badge-clear':c.section_type==='claim_independent','badge-medium':c.section_type==='claim_dependent','badge-low':c.section_type==='description'}" x-text="c.section_type.replace('_',' ')"></span></td>
+                      <td style="width:140px"><span class="badge badge-neutral" x-text="c.section_type.replace('_',' ')"></span></td>
                       <td class="text-xs" style="color:var(--text2)" x-text="c.content.slice(0,200)+(c.content.length>200?'…':'')"></td>
                       <td class="text-xs" style="color:var(--text3);text-align:center">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style="opacity:0.4"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>

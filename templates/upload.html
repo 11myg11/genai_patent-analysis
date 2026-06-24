@@ -21,20 +21,20 @@
       <!-- Drop zone -->
       <div class="card glow-card p-1" style="border-radius:16px">
         <div class="flex flex-col items-center justify-center gap-4 py-12 px-6 cursor-pointer transition-all duration-200"
-             style="border:2px dashed rgba(255,255,255,0.1);border-radius:12px"
-             :style="dragging?'border-color:rgba(99,102,241,0.6);background:rgba(99,102,241,0.05)':''"
+             style="border:2px dashed rgba(0,96,169,0.25);border-radius:12px"
+             :style="dragging?'border-color:rgba(0,96,169,0.6);background:rgba(0,96,169,0.05)':''"
              @dragover.prevent="dragging=true"
              @dragleave.prevent="dragging=false"
              @drop.prevent="onDrop($event)"
              @click="$refs.fi.click()">
-          <div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,rgba(99,102,241,0.2),rgba(6,182,212,0.1));display:flex;align-items:center;justify-content:center;border:1px solid rgba(99,102,241,0.25)">
+          <div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,rgba(0,96,169,0.2),rgba(0,153,187,0.1));display:flex;align-items:center;justify-content:center;border:1px solid rgba(0,96,169,0.25)">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="#818cf8" stroke-width="1.8" stroke-linecap="round"/>
-              <path d="M17 8l-5-5-5 5M12 3v12" stroke="#22d3ee" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="#4d9ed4" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M17 8l-5-5-5 5M12 3v12" stroke="#0099bb" stroke-width="1.8" stroke-linecap="round"/>
             </svg>
           </div>
           <div class="text-center">
-            <p class="text-sm font-medium text-white">Drop PDF here or <span style="color:#818cf8">browse files</span></p>
+            <p class="text-sm font-medium text-white">Drop PDF here or <span style="color:#4d9ed4">browse files</span></p>
             <p class="text-xs mt-1" style="color:var(--text3)">Any language · USPTO / EPO / CNIPA / JPO · Max 50 MB</p>
           </div>
           <input type="file" accept=".pdf" class="hidden" x-ref="fi" @change="onFileSelect($event)"/>
@@ -82,7 +82,7 @@
             <p class="label mb-1.5">Patent Number</p>
             <input x-model="form.patent_number" type="text" placeholder="Auto-detected…"
                    class="w-full px-3 py-2.5 text-sm"
-                   :style="autoFilled&&form.patent_number?'border-color:rgba(16,185,129,0.4)!important':''"/>
+                   :style="autoFilled&&form.patent_number?'border-color:rgba(0,135,90,0.4)!important':''"/>
           </div>
           <div>
             <p class="label mb-1.5">Jurisdiction</p>
@@ -103,7 +103,7 @@
           <p class="label mb-1.5">Title</p>
           <input x-model="form.title" type="text" placeholder="Auto-detected…"
                  class="w-full px-3 py-2.5 text-sm"
-                 :style="autoFilled&&form.title?'border-color:rgba(16,185,129,0.4)!important':''"/>
+                 :style="autoFilled&&form.title?'border-color:rgba(0,135,90,0.4)!important':''"/>
         </div>
 
         <div class="grid grid-cols-2 gap-3 mb-4">
@@ -111,12 +111,12 @@
             <p class="label mb-1.5">Assignee / Competitor</p>
             <input x-model="form.assignee" type="text" placeholder="Auto-detected…"
                    class="w-full px-3 py-2.5 text-sm"
-                   :style="autoFilled&&form.assignee?'border-color:rgba(16,185,129,0.4)!important':''"/>
+                   :style="autoFilled&&form.assignee?'border-color:rgba(0,135,90,0.4)!important':''"/>
           </div>
           <div>
             <p class="label mb-1.5">Publication Date</p>
             <input x-model="form.pub_date" type="date" class="w-full px-3 py-2.5 text-sm"
-                   :style="autoFilled&&form.pub_date?'border-color:rgba(16,185,129,0.4)!important':''"/>
+                   :style="autoFilled&&form.pub_date?'border-color:rgba(0,135,90,0.4)!important':''"/>
           </div>
         </div>
 
@@ -155,24 +155,24 @@
             <div>
               <div class="flex items-center gap-2.5 mb-1.5">
                 <div style="width:20px;height:20px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.3s"
-                     :style="s.status==='done'?'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.4)':
-                             s.status==='active'?'background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4)':
-                             'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1)'">
+                     :style="s.status==='done'?'background:rgba(0,135,90,0.15);border:1px solid rgba(0,135,90,0.4)':
+                             s.status==='active'?'background:rgba(0,96,169,0.15);border:1px solid rgba(0,96,169,0.4)':
+                             'background:rgba(0,96,169,0.04);border:1px solid rgba(0,96,169,0.14)'">
                   <svg x-show="s.status==='done'" width="10" height="10" viewBox="0 0 24 24" fill="none">
-                    <path d="M5 13l4 4L19 7" stroke="#34d399" stroke-width="2.5" stroke-linecap="round"/>
+                    <path d="M5 13l4 4L19 7" stroke="#00875a" stroke-width="2.5" stroke-linecap="round"/>
                   </svg>
-                  <div x-show="s.status==='active'" class="spinner" style="width:10px;height:10px;border-width:1.5px;border-top-color:#818cf8"></div>
+                  <div x-show="s.status==='active'" class="spinner" style="width:10px;height:10px;border-width:1.5px;border-top-color:#4d9ed4"></div>
                   <div x-show="s.status==='pending'" style="width:5px;height:5px;border-radius:50%;background:var(--text3)"></div>
                 </div>
                 <span class="text-sm"
-                      :style="s.status==='done'?'color:#34d399':s.status==='active'?'color:#e2e8f0':'color:var(--text3)'"
+                      :style="s.status==='done'?'color:#00875a':s.status==='active'?'color:#e2e8f0':'color:var(--text3)'"
                       x-text="s.label"></span>
               </div>
-              <div style="height:3px;border-radius:2px;background:rgba(255,255,255,0.06);margin-left:28px;overflow:hidden">
+              <div style="height:3px;border-radius:2px;background:rgba(0,0,0,0.07);margin-left:28px;overflow:hidden">
                 <div style="height:100%;border-radius:2px;transition:width 0.8s cubic-bezier(.4,0,.2,1)"
                      :style="{
                        width:s.status==='done'?'100%':s.status==='active'?'55%':'0%',
-                       background:s.status==='done'?'#34d399':'linear-gradient(90deg,#4f46e5,#06b6d4)'
+                       background:s.status==='done'?'#00875a':'linear-gradient(90deg,#004e8c,#06b6d4)'
                      }"></div>
               </div>
             </div>
@@ -196,7 +196,7 @@
               <template x-for="p in recentPatents" :key="p.id">
                 <tr style="cursor:pointer" @click="window.location='/summaries'">
                   <td>
-                    <div class="font-mono text-xs" style="color:#818cf8" x-text="p.patent_number"></div>
+                    <div class="font-mono text-xs" style="color:#4d9ed4" x-text="p.patent_number"></div>
                     <div class="text-xs mt-0.5" style="color:var(--text2)" x-text="p.title.slice(0,35)+(p.title.length>35?'…':'')"></div>
                   </td>
                   <td class="text-xs" style="color:var(--text2)" x-text="p.assignee||'—'"></td>

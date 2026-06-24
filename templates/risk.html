@@ -12,9 +12,9 @@
       </p>
     </div>
     <div class="flex items-center gap-2 px-4 py-2 rounded-full"
-         style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2)">
-      <div style="width:7px;height:7px;border-radius:50%;background:#818cf8;box-shadow:0 0 6px #818cf8"></div>
-      <span class="text-xs font-mono" style="color:#818cf8">
+         style="background:rgba(0,96,169,0.08);border:1px solid rgba(0,96,169,0.2)">
+      <div style="width:7px;height:7px;border-radius:50%;background:#4d9ed4;box-shadow:0 0 6px #4d9ed4"></div>
+      <span class="text-xs font-mono" style="color:#4d9ed4">
         {{ patents|length }} patent{{ 's' if patents|length != 1 else '' }} in corpus
       </span>
     </div>
@@ -122,7 +122,7 @@
       <div x-show="!result || !result.patent_assessments || result.patent_assessments.length === 0"
            class="flex flex-col items-center justify-center py-14 gap-2">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" style="opacity:0.3">
-          <path d="M5 13l4 4L19 7" stroke="#34d399" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M5 13l4 4L19 7" stroke="#00875a" stroke-width="2.5" stroke-linecap="round"/>
         </svg>
         <p class="text-sm" style="color:var(--text3)">No patent overlap detected.</p>
       </div>
@@ -134,7 +134,7 @@
           <!-- Patent header row -->
           <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-3">
-              <span class="font-mono text-sm font-bold" style="color:#818cf8" x-text="p.patent_number"></span>
+              <span class="font-mono text-sm font-bold" style="color:#4d9ed4" x-text="p.patent_number"></span>
               <span class="text-xs" style="color:var(--text2)" x-text="p.title"></span>
               <span class="badge badge-neutral font-mono text-xs" x-text="p.jurisdiction"></span>
             </div>
@@ -143,7 +143,7 @@
               <div class="flex items-center gap-2">
                 <p class="text-xs" style="color:var(--text3)">Risk Score</p>
                 <span class="font-display text-lg font-bold"
-                  :style="`color:${p.risk_score>=70?'#f87171':p.risk_score>=40?'#fbbf24':p.risk_score>=10?'#34d399':'#6ee7b7'}`"
+                  :style="`color:${p.risk_score>=70?'#f87171':p.risk_score>=40?'#fbbf24':p.risk_score>=10?'#00875a':'#6ee7b7'}`"
                   x-text="p.risk_score + ' / 100'"></span>
                 <span class="badge text-xs"
                   :class="p.risk_score>=70?'badge-high':p.risk_score>=40?'badge-medium':p.risk_score>=10?'badge-low':'badge-clear'"
@@ -153,22 +153,22 @@
           </div>
 
           <!-- Risk score bar -->
-          <div class="mb-4" style="height:4px;border-radius:2px;background:rgba(255,255,255,0.06);overflow:hidden">
+          <div class="mb-4" style="height:4px;border-radius:2px;background:rgba(0,0,0,0.07);overflow:hidden">
             <div style="height:100%;border-radius:2px;transition:width 0.6s ease"
-              :style="`width:${p.risk_score}%;background:${p.risk_score>=70?'#f87171':p.risk_score>=40?'#fbbf24':p.risk_score>=10?'#34d399':'#6ee7b7'}`"></div>
+              :style="`width:${p.risk_score}%;background:${p.risk_score>=70?'#f87171':p.risk_score>=40?'#fbbf24':p.risk_score>=10?'#00875a':'#6ee7b7'}`"></div>
           </div>
 
           <!-- Three element columns -->
           <div class="grid grid-cols-3 gap-3 mb-4">
 
             <!-- Matched -->
-            <div class="px-3 py-3 rounded-lg" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.15)">
-              <p class="label mb-2" style="color:#34d399">Matched Elements</p>
+            <div class="px-3 py-3 rounded-lg" style="background:rgba(0,135,90,0.06);border:1px solid rgba(0,135,90,0.15)">
+              <p class="label mb-2" style="color:#00875a">Matched Elements</p>
               <template x-if="p.matched_elements && p.matched_elements.length">
                 <ul class="flex flex-col gap-1">
                   <template x-for="el in p.matched_elements" :key="el">
                     <li class="flex items-start gap-1.5 text-xs" style="color:var(--text2)">
-                      <span style="color:#34d399;flex-shrink:0;margin-top:1px">✓</span>
+                      <span style="color:#00875a;flex-shrink:0;margin-top:1px">✓</span>
                       <span x-text="el"></span>
                     </li>
                   </template>
@@ -178,13 +178,13 @@
             </div>
 
             <!-- Potential Protective Difference -->
-            <div class="px-3 py-3 rounded-lg" style="background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.15)">
-              <p class="label mb-2" style="color:#818cf8">Potential Protective Difference</p>
+            <div class="px-3 py-3 rounded-lg" style="background:rgba(0,96,169,0.06);border:1px solid rgba(0,96,169,0.15)">
+              <p class="label mb-2" style="color:#4d9ed4">Potential Protective Difference</p>
               <template x-if="p.missing_elements && p.missing_elements.length">
                 <ul class="flex flex-col gap-1">
                   <template x-for="el in p.missing_elements" :key="el">
                     <li class="flex items-start gap-1.5 text-xs" style="color:var(--text2)">
-                      <span style="color:#818cf8;flex-shrink:0;margin-top:1px">✗</span>
+                      <span style="color:#4d9ed4;flex-shrink:0;margin-top:1px">✗</span>
                       <span x-text="el"></span>
                     </li>
                   </template>
@@ -212,7 +212,7 @@
           </div>
 
           <!-- Explanation -->
-          <div class="px-3 py-3 rounded-lg" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07)">
+          <div class="px-3 py-3 rounded-lg" style="background:rgba(0,96,169,0.04);border:1px solid rgba(0,96,169,0.12)">
             <p class="label mb-1">Explanation</p>
             <p class="text-xs leading-relaxed" style="color:var(--text2)" x-text="p.overlap_explanation || 'No explanation provided.'"></p>
           </div>
@@ -222,9 +222,9 @@
     </div>
 
     <!-- Next step CTA -->
-    <div class="card p-5 flex items-center gap-4" style="border-radius:16px;border-color:rgba(16,185,129,0.2);background:rgba(16,185,129,0.04)">
+    <div class="card p-5 flex items-center gap-4" style="border-radius:16px;border-color:rgba(0,135,90,0.2);background:rgba(0,135,90,0.04)">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="flex-shrink:0">
-        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#00875a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       <div>
         <p class="text-sm font-semibold text-white">Risk identified? Get design-around proposals.</p>

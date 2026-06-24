@@ -137,6 +137,11 @@
             <div class="flex items-center gap-2 mb-1" style="padding-right:54px">
               <span class="font-mono text-xs font-semibold" style="color:#818cf8" x-text="p.patent_number"></span>
               <span class="badge badge-neutral" style="font-size:9px" x-text="p.jurisdiction"></span>
+              <span x-show="innovationCounts[p.id]"
+                    class="font-mono px-1.5 py-0.5 rounded"
+                    style="font-size:9px;font-weight:600;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.25);color:#34d399"
+                    x-text="'★ ' + innovationCounts[p.id]"
+                    title="Referenced in saved innovation analyses"></span>
             </div>
             <p class="text-xs leading-snug" style="color:var(--text);padding-right:54px" x-text="p.title.slice(0,55)+(p.title.length>55?'…':'')"></p>
             <p class="text-xs mt-1" style="color:var(--text3)" x-text="p.assignee||'Unknown assignee'"></p>
@@ -414,8 +419,20 @@ function summariesPage() {
     deleteTarget: null, deleting: false,
     lightbox: null,
     activeChunk: null,
+    innovationCounts: {},   // {patent_id: number_of_saved_analyses_that_reference_it}
 
-    init() { this.filtered = [...this.allPatents]; },
+    init() {
+      this.filtered = [...this.allPatents];
+      fetch('/api/v1/innovation/saved').then(r => r.ok ? r.json() : []).then(list => {
+        const counts = {};
+        for (const item of list) {
+          for (const pid of (item.patent_ids || [])) {
+            counts[pid] = (counts[pid] || 0) + 1;
+          }
+        }
+        this.innovationCounts = counts;
+      }).catch(() => {});
+    },
 
     openLightbox(idx) { this.lightbox = idx; },
     lbNext() { if (this.images.length) this.lightbox = (this.lightbox + 1) % this.images.length; },

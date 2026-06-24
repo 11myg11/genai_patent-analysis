@@ -5,19 +5,24 @@ Route handlers are kept thin: they validate input, delegate to services/utils,
 and map exceptions to HTTP status codes. No business logic lives here.
 
 Endpoints:
-  GET  /health                             → liveness probe
-  POST /api/v1/extract-metadata            → extract patent metadata from a PDF upload
-  POST /api/v1/ingest                      → full ingestion pipeline
-  GET  /api/v1/patents                     → list all patents
-  GET  /api/v1/patents/{patent_id}         → single patent with all chunks
-  PATCH  /api/v1/patents/{patent_id}       → partial metadata update
-  DELETE /api/v1/patents/{patent_id}       → delete patent + chunks + images
-  GET  /api/v1/patents/{patent_id}/summary → LLM-generated summary
-  GET  /api/v1/patents/{patent_id}/images  → list figure metadata
-  GET  /api/v1/images/{image_id}           → stream a single figure as PNG
-  POST /api/v1/compare                     → compare two patents
-  POST /api/v1/risk-analysis               → Phase 2: IP risk assessment only
-  POST /api/v1/design-suggestions          → Phase 3: design proposals built on risk output
+  GET    /health                                  → liveness probe
+  POST   /api/v1/extract-metadata                 → extract patent metadata from a PDF upload
+  POST   /api/v1/ingest                           → full ingestion pipeline
+  GET    /api/v1/patents                          → list all patents
+  GET    /api/v1/patents/{patent_id}              → single patent with all chunks
+  PATCH  /api/v1/patents/{patent_id}              → partial metadata update
+  DELETE /api/v1/patents/{patent_id}              → delete patent + chunks + images
+  GET    /api/v1/patents/{patent_id}/summary      → LLM-generated summary
+  GET    /api/v1/patents/{patent_id}/images       → list figure metadata
+  GET    /api/v1/images/{image_id}               → stream a single figure as PNG
+  POST   /api/v1/compare                         → compare two patents
+  POST   /api/v1/risk-analysis                   → Phase 2: IP risk assessment only
+  POST   /api/v1/design-suggestions              → Phase 3: design proposals built on risk output
+  POST   /api/v1/innovation                      → Phase 4: corpus-wide gap + innovation analysis
+  POST   /api/v1/innovation/save                 → save a completed innovation analysis
+  GET    /api/v1/innovation/saved                → list all saved analyses (summaries only)
+  GET    /api/v1/innovation/saved/{analysis_id}  → retrieve one full saved analysis
+  DELETE /api/v1/innovation/saved/{analysis_id}  → delete a saved analysis
 """
 import asyncio
 import json
@@ -35,6 +40,11 @@ from app.models import (
     CompareRequest,
     DesignSuggestionRequest,
     DesignSuggestionResponse,
+    InnovationRequest,
+    InnovationResponse,
+    InnovationSaveRequest,
+    SavedInnovationSummary,
+    SavedInnovationDetail,
     PatentRiskResult,
     RiskAnalysisRequest,
     RiskAnalysisResponse,
@@ -42,6 +52,13 @@ from app.models import (
 )
 from app.services.ingest import ingest_pdf
 from app.services.llm import llm_json
+from app.services.innovation import (
+    run_innovation_pipeline,
+    save_analysis,
+    list_saved_analyses,
+    get_saved_analysis,
+    delete_saved_analysis,
+)
 from app.services.retrieval import (
     call_agent_auditor,
     call_agent_designer,
@@ -611,3 +628,124 @@ async def design_suggestions(request: DesignSuggestionRequest):
         proposals_generated=proposals_generated,
         proposals_passed=proposals_passed,
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Innovation Opportunities
+# ---------------------------------------------------------------------------
+
+@router.post("/api/v1/innovation", response_model=InnovationResponse)
+async def innovation_analysis(request: InnovationRequest):
+    """
+    Phase 4: Corpus-wide patent gap and innovation opportunity analysis.
+
+      Step 1 — Fetch up to 30 patents, ranked by semantic relevance to the domain
+               (or most recent if no domain is given), with representative claim chunks
+      Step 2 — Aggregate publication dates into a year-by-year trend (no LLM)
+      Step 3 — LLM Analyst: group patents into technology clusters, identify whitespace gaps
+      Step 4 — LLM Innovator: generate actionable innovation vectors from the gaps
+    """
+    log.info(
+        "innovation | domain=%r scope=%s jurisdiction=%s",
+        request.domain, request.scope, request.jurisdiction,
+    )
+
+    domain_embedding = None
+    if request.domain.strip():
+        try:
+            domain_embedding = state.embed_model.encode(
+                [request.domain], normalize_embeddings=True, show_progress_bar=False
+            )[0].tolist()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Embedding error: {exc}") from exc
+
+    try:
+        result = await asyncio.to_thread(
+            run_innovation_pipeline,
+            request.domain,
+            request.scope,
+            request.jurisdiction,
+            request.focus_prompt,
+            domain_embedding,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return InnovationResponse(**result)
+
+
+@router.post("/api/v1/innovation/save", response_model=SavedInnovationSummary)
+async def save_innovation_analysis(request: InnovationSaveRequest):
+    """Save a completed innovation analysis to the database for later retrieval."""
+    result_dict = request.result
+    patent_count = result_dict.get("patent_count", len(request.patent_ids))
+    try:
+        row = await asyncio.to_thread(
+            save_analysis,
+            request.domain,
+            request.scope,
+            request.jurisdiction,
+            request.focus_prompt,
+            patent_count,
+            request.patent_ids,
+            result_dict,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    result = row.get("result") or {}
+    return SavedInnovationSummary(
+        id=row["id"],
+        created_at=str(row["created_at"]),
+        domain=row.get("domain", ""),
+        scope=row.get("scope", "full"),
+        jurisdiction=row.get("jurisdiction", "ALL"),
+        patent_count=row.get("patent_count", 0),
+        patent_ids=row.get("patent_ids") or [],
+        cluster_count=len(result.get("clusters", [])),
+        gap_count=len(result.get("gaps", [])),
+        innovation_count=len(result.get("innovations", [])),
+    )
+
+
+@router.get("/api/v1/innovation/saved", response_model=list[SavedInnovationSummary])
+async def list_innovation_analyses():
+    """List all saved innovation analyses, newest first, without the heavy result payload."""
+    try:
+        rows = await asyncio.to_thread(list_saved_analyses)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return [SavedInnovationSummary(**r) for r in rows]
+
+
+@router.get("/api/v1/innovation/saved/{analysis_id}", response_model=SavedInnovationDetail)
+async def get_innovation_analysis(analysis_id: str):
+    """Retrieve one full saved innovation analysis including the result payload."""
+    try:
+        row = await asyncio.to_thread(get_saved_analysis, analysis_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Analysis not found.")
+    return SavedInnovationDetail(
+        id=row["id"],
+        created_at=str(row["created_at"]),
+        domain=row.get("domain", ""),
+        scope=row.get("scope", "full"),
+        jurisdiction=row.get("jurisdiction", "ALL"),
+        focus_prompt=row.get("focus_prompt", ""),
+        patent_count=row.get("patent_count", 0),
+        patent_ids=row.get("patent_ids") or [],
+        result=row.get("result") or {},
+    )
+
+
+@router.delete("/api/v1/innovation/saved/{analysis_id}", status_code=204)
+async def delete_innovation_analysis(analysis_id: str):
+    """Delete a saved innovation analysis."""
+    try:
+        await asyncio.to_thread(delete_saved_analysis, analysis_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

@@ -10,6 +10,14 @@ Phase 3 — Design Suggestions:
   DesignSuggestionResponse — output: original risk + audited proposals (LOW/CLEAR only)
   DesignAroundProposal     — a single audited design proposal (shared by both phases)
 
+Phase 4 — Innovation Opportunities:
+  InnovationRequest    — input for POST /api/v1/innovation
+  InnovationResponse   — output: clusters + gaps + innovation vectors + trend data
+  TechnologyCluster    — a recurring technical theme across the corpus
+  PatentGap            — an unprotected whitespace area adjacent to a cluster
+  InnovationVector     — an actionable direction for new IP, scored by feasibility + novelty
+  TrendPoint           — {year, count} for the publication trend bar chart
+
 Other:
   CompareRequest        — input for POST /api/v1/compare
   ChunkReference        — a single matched patent chunk
@@ -99,3 +107,84 @@ class PatentUpdateRequest(BaseModel):
     assignee:         Optional[str] = None
     jurisdiction:     Optional[str] = None
     publication_date: Optional[str] = None
+
+
+# ── Phase 4: Innovation Opportunities ─────────────────────────────────────────
+
+class TechnologyCluster(BaseModel):
+    name:           str
+    summary:        str
+    patent_count:   int        = 0
+    patent_numbers: List[str]  = []
+
+
+class PatentGap(BaseModel):
+    area:              str
+    description:       str
+    opportunity_level: str          # HIGH | MEDIUM | LOW
+    related_patents:   List[str] = []
+
+
+class InnovationVector(BaseModel):
+    title:               str
+    description:         str
+    feasibility:         str          # HIGH | MEDIUM | LOW
+    novelty:             str          # HIGH | MEDIUM | LOW
+    gap_rationale:       str
+    addresses_clusters:  List[str] = []
+
+
+class TrendPoint(BaseModel):
+    year:  int
+    count: int
+
+
+class InnovationRequest(BaseModel):
+    domain:       str = Field(default="")
+    scope:        str = Field(default="full")   # full | claims | description
+    jurisdiction: str = Field(default="ALL")
+    focus_prompt: str = Field(default="")
+
+
+class InnovationResponse(BaseModel):
+    domain:        str
+    patent_count:  int
+    patent_ids:    List[str]           = []   # UUIDs of patents in the corpus (used for save + summaries badge)
+    clusters:      List[TechnologyCluster]
+    gaps:          List[PatentGap]
+    innovations:   List[InnovationVector]
+    trend_data:    List[TrendPoint]
+
+
+class InnovationSaveRequest(BaseModel):
+    domain:       str
+    scope:        str        = "full"
+    jurisdiction: str        = "ALL"
+    focus_prompt: str        = ""
+    patent_ids:   List[str]  = []
+    result:       Dict       # full InnovationResponse payload
+
+
+class SavedInnovationSummary(BaseModel):
+    id:               str
+    created_at:       str
+    domain:           str
+    scope:            str
+    jurisdiction:     str
+    patent_count:     int
+    patent_ids:       List[str]   # kept so the frontend can build per-patent analysis counts
+    cluster_count:    int
+    gap_count:        int
+    innovation_count: int
+
+
+class SavedInnovationDetail(BaseModel):
+    id:           str
+    created_at:   str
+    domain:       str
+    scope:        str
+    jurisdiction: str
+    focus_prompt: str
+    patent_count: int
+    patent_ids:   List[str]
+    result:       Dict            # full InnovationResponse payload

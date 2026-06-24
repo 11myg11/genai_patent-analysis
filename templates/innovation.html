@@ -130,6 +130,21 @@
         <p class="label mb-1">Innovation Vectors</p>
         <span class="badge badge-info font-mono" x-text="result ? (result.innovations?.length ?? 0) + ' ideas' : ''"></span>
       </div>
+      <div style="margin-left:auto;flex-shrink:0">
+        <button @click="saveAnalysis()" :disabled="saving || !!saved_id" class="btn btn-secondary" style="font-size:12px;padding:7px 18px;min-width:120px">
+          <span x-show="!saving && !saved_id" class="flex items-center gap-1.5">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17 21 17 13 7 13 7 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Save Analysis
+          </span>
+          <span x-show="saving" class="flex items-center gap-1.5">
+            <div class="spinner" style="width:11px;height:11px"></div>Saving…
+          </span>
+          <span x-show="!!saved_id && !saving" style="color:#34d399" class="flex items-center gap-1.5">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><polyline points="20 6 9 17 4 12" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Saved
+          </span>
+        </button>
+      </div>
     </div>
 
     <!-- Three-column layout: Clusters | Gaps | Innovation Vectors -->
@@ -318,6 +333,42 @@
     </div>
   </div>
 
+  <!-- Saved Analyses panel — always visible once at least one analysis has been saved -->
+  <div x-show="savedList.length > 0" x-transition class="card flex flex-col overflow-hidden" style="border-radius:16px">
+    <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border);flex-shrink:0">
+      <div>
+        <p class="label">Saved Analyses</p>
+        <p class="text-xs mt-0.5" style="color:var(--text3)">Click Load to restore a previous result</p>
+      </div>
+      <span class="badge badge-info font-mono" x-text="savedList.length + (savedList.length === 1 ? ' saved' : ' saved')"></span>
+    </div>
+    <template x-for="item in savedList" :key="item.id">
+      <div class="px-5 py-3 flex items-center gap-4 fade-up" style="border-bottom:1px solid var(--border)">
+        <!-- domain + meta -->
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-white truncate" x-text="item.domain || 'General corpus'"></p>
+          <p class="text-xs mt-0.5" style="color:var(--text3)"
+             x-text="new Date(item.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) + ' · ' + item.patent_count + ' patents · ' + item.cluster_count + ' clusters · ' + item.gap_count + ' gaps · ' + item.innovation_count + ' ideas'"></p>
+        </div>
+        <!-- jurisdiction badge -->
+        <span class="badge badge-info font-mono text-xs" x-show="item.jurisdiction !== 'ALL'" x-text="item.jurisdiction"></span>
+        <!-- load -->
+        <button @click="loadSaved(item)" class="btn btn-secondary" style="font-size:11px;padding:5px 14px;min-width:70px"
+                :style="saved_id === item.id ? 'border-color:rgba(16,185,129,0.4);color:#34d399' : ''">
+          <span x-show="saved_id !== item.id">Load</span>
+          <span x-show="saved_id === item.id">Loaded ✓</span>
+        </button>
+        <!-- delete -->
+        <button @click="deleteSaved(item.id)"
+                style="padding:5px 10px;border-radius:7px;border:1px solid rgba(239,68,68,0.22);background:rgba(239,68,68,0.06);color:#f87171;font-size:11px;cursor:pointer;transition:background 0.15s"
+                @mouseenter="$el.style.background='rgba(239,68,68,0.13)'"
+                @mouseleave="$el.style.background='rgba(239,68,68,0.06)'">
+          Delete
+        </button>
+      </div>
+    </template>
+  </div>
+
 </div><!-- end Alpine root -->
 
 <script>
@@ -326,6 +377,9 @@ function innovationPage() {
     loading: false,
     result: null,
     errorMsg: '',
+    saved_id: null,
+    saving: false,
+    savedList: [],
     form: {
       domain: '',
       scope: 'full',
@@ -348,6 +402,7 @@ function innovationPage() {
         const savedForm = sessionStorage.getItem('innovation_last_form');
         if (savedForm) this.form = { ...this.form, ...JSON.parse(savedForm) };
       } catch(e) {}
+      this.loadSavedList();
     },
     _updateStats() {
       if (!this.result) return;
@@ -359,6 +414,7 @@ function innovationPage() {
     reset() {
       this.result = null;
       this.errorMsg = '';
+      this.saved_id = null;
       this.form.domain = '';
       this.form.focus = '';
       this.stats = { patent_count: null, cluster_count: null, gap_count: null, vector_count: null };
@@ -369,6 +425,7 @@ function innovationPage() {
       this.loading = true;
       this.result = null;
       this.errorMsg = '';
+      this.saved_id = null;
       try {
         const r = await fetch('/api/v1/innovation', {
           method: 'POST',
@@ -396,6 +453,63 @@ function innovationPage() {
       } finally {
         this.loading = false;
       }
+    },
+
+    async saveAnalysis() {
+      if (!this.result || this.saved_id) return;
+      this.saving = true;
+      try {
+        const r = await fetch('/api/v1/innovation/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            domain:       this.form.domain,
+            scope:        this.form.scope,
+            jurisdiction: this.form.jurisdiction,
+            focus_prompt: this.form.focus,
+            patent_ids:   this.result.patent_ids || [],
+            result:       this.result,
+          }),
+        });
+        const data = await r.json();
+        if (!r.ok) { this.errorMsg = data.detail || 'Save failed'; return; }
+        this.saved_id = data.id;
+        await this.loadSavedList();
+      } catch(e) {
+        this.errorMsg = 'Save error: ' + e.message;
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    async loadSavedList() {
+      try {
+        const r = await fetch('/api/v1/innovation/saved');
+        if (r.ok) this.savedList = await r.json();
+      } catch(e) {}
+    },
+
+    async loadSaved(item) {
+      try {
+        const r = await fetch(`/api/v1/innovation/saved/${item.id}`);
+        if (!r.ok) return;
+        const data = await r.json();
+        this.result = data.result;
+        this.form.domain       = data.domain;
+        this.form.scope        = data.scope;
+        this.form.jurisdiction = data.jurisdiction;
+        this.form.focus        = data.focus_prompt;
+        this.saved_id          = data.id;
+        this._updateStats();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch(e) {}
+    },
+
+    async deleteSaved(id) {
+      if (!confirm('Delete this saved analysis?')) return;
+      await fetch(`/api/v1/innovation/saved/${id}`, { method: 'DELETE' });
+      if (this.saved_id === id) { this.result = null; this.saved_id = null; }
+      await this.loadSavedList();
     },
   }
 }

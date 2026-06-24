@@ -10,6 +10,9 @@ Phase 2 (Risk Analysis):
   run_patent_risk_pipeline       — orchestrates Steps 1-5, returns list of PatentRiskResult dicts.
                                    Accepts optional top_n/score_floor (default = Phase 2 behaviour,
                                    unchanged); Phase 3 passes wider, cost-capped values — see below.
+                                   Accepts optional on_step(step_id, status) for live progress
+                                   ("search"/"candidates"/"assess") streamed to the browser — see
+                                   app/services/progress.py.
   _score_to_label                — converts numeric risk_score to HIGH/MEDIUM/LOW/CLEAR label
 
 Phase 3 (Design Suggestions):
@@ -25,13 +28,14 @@ Phase 3 (Design Suggestions):
 """
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import HTTPException
 
 from app.config import TOP_K_CHUNKS, PVB_MIN_MM, PVB_MAX_MM, GLASS_TOTAL_MIN, GLASS_TOTAL_MAX
 from app.models import DesignAroundProposal, PatentRiskResult
 from app.services.llm import llm_json
+from app.services.progress import noop_on_step
 from app.state import state
 
 log = logging.getLogger(__name__)
@@ -311,6 +315,7 @@ def run_patent_risk_pipeline(
     jurisdiction: str,
     top_n: int = TOP_CANDIDATE_PATENTS,
     score_floor: float = 0.0,
+    on_step: Optional[Callable[[str, str], None]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Full patent-level risk pipeline. Returns a list of per-patent risk dicts,
@@ -326,21 +331,36 @@ def run_patent_risk_pipeline(
                   below score_floor * (best candidate's total_score). 0.0 (default)
                   disables this filter entirely — no behaviour change for callers
                   that don't pass it.
+    on_step     — optional progress callback (step_id, status), step ids "search",
+                  "candidates", "assess". Only passed by the user-facing risk-analysis
+                  and design-suggestions routes — internal re-scoring calls (e.g. from
+                  call_agent_designer) omit it so their sub-steps don't leak into the
+                  user-visible pipeline panel.
     """
+    step = on_step or noop_on_step
+
     # Step 1 — retrieve independent claim chunks
+    step("search", "active")
     ind_chunks = fetch_independent_claim_chunks(embedding, query_text, jurisdiction)
+    step("search", "done")
     if not ind_chunks:
         log.info("Pipeline: no independent claim chunks found → CLEAR")
+        step("candidates", "skipped")
+        step("assess", "skipped")
         return []
 
     # Step 2 — select top candidate patents
+    step("candidates", "active")
     candidate_patents = select_candidate_patents(ind_chunks, top_n=top_n)
+    step("candidates", "done")
     if not candidate_patents:
+        step("assess", "skipped")
         return []
 
     best_score = candidate_patents[0].get("total_score", 0.0)
 
     # Steps 3–5 — expand claim family and assess each patent
+    step("assess", "active")
     results: List[Dict[str, Any]] = []
     for patent in candidate_patents:
         if score_floor and patent.get("total_score", 0.0) < score_floor * best_score:
@@ -369,6 +389,7 @@ def run_patent_risk_pipeline(
 
     # Sort by risk_score descending
     results.sort(key=lambda r: r.get("risk_score", 0), reverse=True)
+    step("assess", "done")
     log.info("Pipeline complete: %d patents assessed", len(results))
     return results
 

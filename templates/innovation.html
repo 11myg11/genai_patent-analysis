@@ -85,6 +85,8 @@
     </div>
   </div>
 
+  {% include "_pipeline_status.html" %}
+
   <!-- Error banner -->
   <div x-show="errorMsg" x-transition class="card p-4 flex items-start gap-3"
        style="border-radius:12px;border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.06)">
@@ -381,6 +383,12 @@ function innovationPage() {
       gap_count: null,
       vector_count: null,
     },
+    stages: [
+      { key:'corpus',    label:'Loading relevant patents',                  status:'pending' },
+      { key:'trends',    label:'Analyzing publication trends',              status:'pending' },
+      { key:'analyst',   label:'Identifying technology clusters & gaps',    status:'pending' },
+      { key:'innovator', label:'Generating innovation ideas',               status:'pending' },
+    ],
     init() {
       try {
         const saved = sessionStorage.getItem('innovation_last_result');
@@ -393,6 +401,7 @@ function innovationPage() {
       } catch(e) {}
       this.loadSavedList();
     },
+    pipelineOpen() { return this.loading || !!this.errorMsg; },
     _updateStats() {
       if (!this.result) return;
       this.stats.cluster_count = this.result.clusters?.length ?? 0;
@@ -407,6 +416,7 @@ function innovationPage() {
       this.form.domain = '';
       this.form.focus = '';
       this.stats = { patent_count: null, cluster_count: null, gap_count: null, vector_count: null };
+      this.stages.forEach(s => s.status = 'pending');
       sessionStorage.removeItem('innovation_last_result');
       sessionStorage.removeItem('innovation_last_form');
     },
@@ -415,33 +425,36 @@ function innovationPage() {
       this.result = null;
       this.errorMsg = '';
       this.saved_id = null;
-      try {
-        const r = await fetch('/api/v1/innovation', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            domain:      this.form.domain,
-            scope:       this.form.scope,
-            jurisdiction: this.form.jurisdiction,
-            focus_prompt: this.form.focus,
-          }),
-        });
-        const data = await r.json();
-        if (!r.ok) {
-          this.errorMsg = data.detail || 'Unknown error';
-          return;
-        }
-        this.result = data;
-        this._updateStats();
-        try {
-          sessionStorage.setItem('innovation_last_result', JSON.stringify(data));
-          sessionStorage.setItem('innovation_last_form', JSON.stringify(this.form));
-        } catch(e) {}
-      } catch(e) {
-        this.errorMsg = 'Network error: ' + e.message;
-      } finally {
-        this.loading = false;
-      }
+      this.stages.forEach(s => s.status = 'pending');
+      await streamPipeline('/api/v1/innovation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          domain:      this.form.domain,
+          scope:       this.form.scope,
+          jurisdiction: this.form.jurisdiction,
+          focus_prompt: this.form.focus,
+        }),
+      }, {
+        onStep: (key, status) => {
+          const s = this.stages.find(s => s.key === key);
+          if (s) s.status = status;
+        },
+        onResult: (data) => {
+          this.result = data;
+          this._updateStats();
+          try {
+            sessionStorage.setItem('innovation_last_result', JSON.stringify(data));
+            sessionStorage.setItem('innovation_last_form', JSON.stringify(this.form));
+          } catch(e) {}
+          this.loading = false;
+        },
+        onError: (msg) => {
+          this.stages.forEach(s => { if (s.status === 'active') s.status = 'error'; });
+          this.errorMsg = msg;
+          this.loading = false;
+        },
+      });
     },
 
     async saveAnalysis() {

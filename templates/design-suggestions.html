@@ -68,6 +68,8 @@
     </div>
   </div>
 
+  {% include "_pipeline_status.html" %}
+
   <!-- Error banner -->
   <div x-show="errorMsg" x-transition class="card p-4 flex items-start gap-3"
        style="border-radius:12px;border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.06)">
@@ -163,6 +165,12 @@ function designSuggestionsPage(){
   return {
     loading:false, result:null, errorMsg:'', isQuotaError:false,
     form:{ product_id:'', component_scope:'Automotive laminated windshield', specs:'', jurisdiction:'ALL' },
+    stages: [
+      { key:'embed',  label:'Analyzing your specification',           status:'pending' },
+      { key:'risk',   label:'Assessing original infringement risk',   status:'pending' },
+      { key:'design', label:'Generating design alternatives',         status:'pending' },
+      { key:'audit',  label:'Running manufacturing audit',            status:'pending' },
+    ],
     init(){
       try {
         const saved = sessionStorage.getItem('design_suggestions_last_result');
@@ -171,40 +179,46 @@ function designSuggestionsPage(){
         if (savedForm) this.form = { ...this.form, ...JSON.parse(savedForm) };
       } catch(e) {}
     },
+    pipelineOpen() { return this.loading || !!this.errorMsg; },
     reset(){
       this.result=null; this.errorMsg=''; this.isQuotaError=false;
       this.form.specs=''; this.form.product_id='';
+      this.stages.forEach(s => s.status = 'pending');
       sessionStorage.removeItem('design_suggestions_last_result');
       sessionStorage.removeItem('design_suggestions_last_form');
     },
     async runAnalysis(){
       if(!this.form.specs||!this.form.product_id)return;
       this.loading=true; this.result=null; this.errorMsg=''; this.isQuotaError=false;
-      try{
-        const r=await fetch('/api/v1/design-suggestions',{
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            product_id:this.form.product_id,
-            component_scope:this.form.component_scope,
-            proposed_specifications:this.form.specs,
-            jurisdiction:this.form.jurisdiction,
-          })
-        });
-        const data=await r.json();
-        if(!r.ok){
-          const detail=data.detail||'Unknown error';
-          this.isQuotaError=(r.status===429||detail.includes('QUOTA_EXHAUSTED'));
-          this.errorMsg=this.isQuotaError ? 'API quota exhausted. Please check your API key in .env and restart.' : detail;
-          return;
-        }
-        this.result=data;
-        try {
-          sessionStorage.setItem('design_suggestions_last_result', JSON.stringify(data));
-          sessionStorage.setItem('design_suggestions_last_form', JSON.stringify(this.form));
-        } catch(e) {}
-      }catch(e){
-        this.errorMsg='Network error: '+e.message;
-      }finally{this.loading=false;}
+      this.stages.forEach(s => s.status = 'pending');
+      await streamPipeline('/api/v1/design-suggestions', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          product_id:this.form.product_id,
+          component_scope:this.form.component_scope,
+          proposed_specifications:this.form.specs,
+          jurisdiction:this.form.jurisdiction,
+        })
+      }, {
+        onStep: (key, status) => {
+          const s = this.stages.find(s => s.key === key);
+          if (s) s.status = status;
+        },
+        onResult: (data) => {
+          this.result = data;
+          try {
+            sessionStorage.setItem('design_suggestions_last_result', JSON.stringify(data));
+            sessionStorage.setItem('design_suggestions_last_form', JSON.stringify(this.form));
+          } catch(e) {}
+          this.loading = false;
+        },
+        onError: (msg) => {
+          this.stages.forEach(s => { if (s.status === 'active') s.status = 'error'; });
+          this.isQuotaError = msg.includes('QUOTA_EXHAUSTED');
+          this.errorMsg = this.isQuotaError ? 'API quota exhausted. Please check your API key in .env and restart.' : msg;
+          this.loading = false;
+        },
+      });
     }
   }
 }

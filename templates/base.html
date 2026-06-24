@@ -6,6 +6,52 @@
   <title>{% block title %}PatentOS{% endblock %} — IP Intelligence</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script>
+    // Consumes a text/event-stream response from a long-running pipeline endpoint
+    // (ingest, risk-analysis, design-suggestions, innovation). Each backend stage
+    // reports an "event: step" as it starts/finishes, so the UI can show real
+    // progress instead of a single opaque spinner. Ends with one "event: result"
+    // (success payload) or "event: error" (failure detail).
+    async function streamPipeline(url, fetchOptions, { onStep, onResult, onError }) {
+      let resp;
+      try {
+        resp = await fetch(url, fetchOptions);
+      } catch (e) {
+        onError('Network error: ' + e.message);
+        return;
+      }
+      if (!resp.ok || !resp.body) {
+        let msg = 'Request failed (' + resp.status + ')';
+        try { const j = await resp.json(); msg = j.detail || msg; } catch (e) {}
+        onError(msg);
+        return;
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let sepIdx;
+        while ((sepIdx = buf.indexOf('\n\n')) !== -1) {
+          const rawEvent = buf.slice(0, sepIdx);
+          buf = buf.slice(sepIdx + 2);
+          let eventType = 'message', dataStr = '';
+          for (const line of rawEvent.split('\n')) {
+            if (line.startsWith('event:')) eventType = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataStr += line.slice(5).trim();
+          }
+          if (!dataStr) continue;
+          let payload;
+          try { payload = JSON.parse(dataStr); } catch (e) { continue; }
+          if (eventType === 'step') onStep(payload.step, payload.status);
+          else if (eventType === 'result') onResult(payload);
+          else if (eventType === 'error') onError(payload.detail || 'Unknown error');
+        }
+      }
+    }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
   <style>
@@ -273,6 +319,39 @@
       display: inline-block; flex-shrink: 0;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    /* ── Indeterminate progress bar (pipeline status panel) — duration of a step
+       is never known up front, so this slides rather than fills to a fake % ── */
+    .progress-indeterminate {
+      position: relative; height: 3px; border-radius: 2px;
+      background: rgba(0,0,0,0.07); overflow: hidden;
+    }
+    .progress-indeterminate::after {
+      content: ''; position: absolute; top: 0; bottom: 0; left: -40%; width: 40%;
+      border-radius: 2px; background: linear-gradient(90deg, #004e8c, #06b6d4);
+      animation: progress-slide 1.1s ease-in-out infinite;
+    }
+    @keyframes progress-slide {
+      0%   { left: -40%; }
+      100% { left: 100%; }
+    }
+    /* ── Pipeline status drawer — fixed overlay sliding in from the right edge,
+       mirroring the left sidebar but only present while a process is actively
+       running. Always in the DOM (off-screen via transform) so the slide can
+       transition; toggled by adding .pipeline-drawer-open. ── */
+    .pipeline-drawer {
+      position: fixed; top: 0; right: 0; bottom: 0; width: 300px;
+      background: #ffffff; border-left: 1px solid var(--border);
+      box-shadow: -8px 0 24px rgba(0,0,0,0.1);
+      padding: 24px 20px; overflow-y: auto;
+      transform: translateX(100%);
+      transition: transform 0.3s cubic-bezier(.4,0,.2,1);
+      z-index: 40;
+    }
+    .pipeline-drawer.pipeline-drawer-open { transform: translateX(0); }
+    /* ── Status bullets — TUM accent palette ── */
+    .bullet-success { background: #1A9A6D; }
+    .bullet-warning { background: #E37222; }
+    .bullet-danger  { background: #D64545; }
     /* ── Animations ── */
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(10px); }

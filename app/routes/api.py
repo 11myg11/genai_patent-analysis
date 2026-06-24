@@ -7,7 +7,7 @@ and map exceptions to HTTP status codes. No business logic lives here.
 Endpoints:
   GET    /health                                  → liveness probe
   POST   /api/v1/extract-metadata                 → extract patent metadata from a PDF upload
-  POST   /api/v1/ingest                           → full ingestion pipeline
+  POST   /api/v1/ingest                           → full ingestion pipeline (SSE stream)
   GET    /api/v1/patents                          → list all patents
   GET    /api/v1/patents/{patent_id}              → single patent with all chunks
   PATCH  /api/v1/patents/{patent_id}              → partial metadata update
@@ -16,13 +16,21 @@ Endpoints:
   GET    /api/v1/patents/{patent_id}/images       → list figure metadata
   GET    /api/v1/images/{image_id}               → stream a single figure as PNG
   POST   /api/v1/compare                         → compare two patents
-  POST   /api/v1/risk-analysis                   → Phase 2: IP risk assessment only
-  POST   /api/v1/design-suggestions              → Phase 3: design proposals built on risk output
-  POST   /api/v1/innovation                      → Phase 4: corpus-wide gap + innovation analysis
+  POST   /api/v1/risk-analysis                   → Phase 2: IP risk assessment only (SSE stream)
+  POST   /api/v1/design-suggestions              → Phase 3: design proposals built on risk output (SSE stream)
+  POST   /api/v1/innovation                      → Phase 4: corpus-wide gap + innovation analysis (SSE stream)
   POST   /api/v1/innovation/save                 → save a completed innovation analysis
   GET    /api/v1/innovation/saved                → list all saved analyses (summaries only)
   GET    /api/v1/innovation/saved/{analysis_id}  → retrieve one full saved analysis
   DELETE /api/v1/innovation/saved/{analysis_id}  → delete a saved analysis
+
+The four pipeline endpoints marked "(SSE stream)" respond with
+text/event-stream instead of one JSON body: a "step" event per real pipeline
+stage (so the UI can show live progress), then one final "result" or "error"
+event carrying the payload that used to be the whole response. See
+app/services/progress.py. Because the HTTP status is already 200 once
+streaming starts, callers must check for an "error" event rather than
+response.ok.
 """
 import asyncio
 import json
@@ -32,7 +40,7 @@ from typing import Optional
 import fitz
 import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from app.config import settings
 from app.models import (
@@ -59,6 +67,7 @@ from app.services.innovation import (
     get_saved_analysis,
     delete_saved_analysis,
 )
+from app.services.progress import stream_sse
 from app.services.retrieval import (
     call_agent_auditor,
     call_agent_designer,
@@ -165,9 +174,11 @@ async def ingest_from_browser(
     jurisdiction:  str        = Form(""),
     pub_date:      str        = Form(""),
 ):
+    """Streams pipeline progress (see module docstring) while running ingest_pdf."""
     contents = await file.read()
-    try:
-        result = await asyncio.to_thread(
+
+    async def work(on_step):
+        return await asyncio.to_thread(
             ingest_pdf,
             pdf_bytes=contents,
             filename=file.filename or "patent.pdf",
@@ -178,12 +189,10 @@ async def ingest_from_browser(
             assignee=assignee,
             jurisdiction=jurisdiction,
             pub_date=pub_date,
+            on_step=on_step,
         )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return result
+
+    return StreamingResponse(stream_sse(work), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------
@@ -470,196 +479,230 @@ async def compare_patents(req: CompareRequest):
 # Phase 2 — Risk Analysis
 # ---------------------------------------------------------------------------
 
-@router.post("/api/v1/risk-analysis", response_model=RiskAnalysisResponse)
+@router.post("/api/v1/risk-analysis")
 async def risk_analysis(request: RiskAnalysisRequest):
     """
-    Phase 2: Patent-level IP risk assessment.
+    Phase 2: Patent-level IP risk assessment. Streams pipeline progress (see module
+    docstring), step ids: embed, search, candidates, assess.
 
-      Step 1 — Embed spec, retrieve independent claim chunks (hybrid RRF)
-      Step 2 — Aggregate chunks by patent, select top candidate patents
-      Step 3 — Fetch complete claim family (independent + dependent) per patent
-      Step 4 — Per-patent LLM assessment: matched/missing/unclear elements
-      Step 5 — Return structured per-patent results sorted by risk_score
+      Step "embed"      — embed the proposed specification
+      Step "search"      — retrieve independent claim chunks (hybrid RRF)
+      Step "candidates"  — aggregate chunks by patent, select top candidate patents
+      Step "assess"      — fetch each candidate's full claim family + per-patent LLM
+                           assessment (matched/missing/unclear elements)
 
-    Overall risk_status is derived from the highest individual patent risk_score:
+    Final result matches the RiskAnalysisResponse schema. Overall risk_status is
+    derived from the highest individual patent risk_score:
       >= 70 → HIGH, >= 40 → MEDIUM, >= 10 → LOW, < 10 → CLEAR
     """
     log.info("risk-analysis | product_id=%s jurisdiction=%s",
              request.product_id, request.jurisdiction)
 
-    try:
-        query_embedding = state.embed_model.encode(
-            [request.proposed_specifications], normalize_embeddings=True, show_progress_bar=False
-        )[0].tolist()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Embedding error: {exc}") from exc
+    async def work(on_step):
+        on_step("embed", "active")
+        query_embedding = (await asyncio.to_thread(
+            state.embed_model.encode,
+            [request.proposed_specifications],
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        ))[0].tolist()
+        on_step("embed", "done")
 
-    patent_results = await asyncio.to_thread(
-        run_patent_risk_pipeline,
-        query_embedding,
-        request.proposed_specifications,
-        request.proposed_specifications,
-        request.component_scope,
-        request.jurisdiction,
-    )
-
-    if not patent_results:
-        return RiskAnalysisResponse(
-            product_id=request.product_id,
-            risk_status="CLEAR",
-            patent_assessments=[],
-            token_budget_used=0,
+        patent_results = await asyncio.to_thread(
+            run_patent_risk_pipeline,
+            query_embedding,
+            request.proposed_specifications,
+            request.proposed_specifications,
+            request.component_scope,
+            request.jurisdiction,
+            on_step=on_step,
         )
 
-    overall_status = _score_to_label(patent_results[0].get("risk_score", 0))
-    assessments    = [PatentRiskResult(**r) for r in patent_results]
-    token_est      = (
-        len(request.proposed_specifications)
-        + sum(len(r.get("overlap_explanation", "")) for r in patent_results)
-    ) // 4
+        if not patent_results:
+            return RiskAnalysisResponse(
+                product_id=request.product_id,
+                risk_status="CLEAR",
+                patent_assessments=[],
+                token_budget_used=0,
+            ).model_dump()
 
-    return RiskAnalysisResponse(
-        product_id=request.product_id,
-        risk_status=overall_status,
-        patent_assessments=assessments,
-        token_budget_used=token_est,
-    )
+        overall_status = _score_to_label(patent_results[0].get("risk_score", 0))
+        assessments    = [PatentRiskResult(**r) for r in patent_results]
+        token_est      = (
+            len(request.proposed_specifications)
+            + sum(len(r.get("overlap_explanation", "")) for r in patent_results)
+        ) // 4
+
+        return RiskAnalysisResponse(
+            product_id=request.product_id,
+            risk_status=overall_status,
+            patent_assessments=assessments,
+            token_budget_used=token_est,
+        ).model_dump()
+
+    return StreamingResponse(stream_sse(work), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------
 # Phase 3 — Design Suggestions
 # ---------------------------------------------------------------------------
 
-@router.post("/api/v1/design-suggestions", response_model=DesignSuggestionResponse)
+@router.post("/api/v1/design-suggestions")
 async def design_suggestions(request: DesignSuggestionRequest):
     """
-    Phase 3: Design suggestions built on top of risk analysis.
+    Phase 3: Design suggestions built on top of risk analysis. Streams pipeline
+    progress (see module docstring), step ids: embed, risk, design, audit.
 
-      Step 1 — Embed spec, run run_patent_risk_pipeline (same as Phase 2). If every
-               assessed patent has risk_score == 0 and no matched_elements (truly no
-               risk, not just a low/CLEAR label), skip straight to an empty response —
-               nothing to design around.
-      Step 2 — Pass structured patent_assessments to call_agent_designer, which
-               proposes 2 alternatives and re-scores each via run_patent_risk_pipeline.
-               Only LOW/CLEAR proposals survive.
-      Step 3 — Run surviving proposals through call_agent_auditor (manufacturing check,
-               cross-checked against the original spec to catch invented baselines).
+      Step "embed"  — embed the proposed specification
+      Step "risk"   — run run_patent_risk_pipeline (same as Phase 2). If every
+                      assessed patent has risk_score == 0 and no matched_elements
+                      (truly no risk, not just a low/CLEAR label), skip straight to
+                      an empty response — nothing to design around ("design"/"audit"
+                      reported as "skipped").
+      Step "design" — pass structured patent_assessments to call_agent_designer,
+                      which proposes 2 alternatives and re-scores each via
+                      run_patent_risk_pipeline. Only LOW/CLEAR proposals survive.
+      Step "audit"  — run surviving proposals through call_agent_auditor
+                      (manufacturing check, cross-checked against the original spec
+                      to catch invented baselines).
     """
     log.info("design-suggestions | product_id=%s jurisdiction=%s",
              request.product_id, request.jurisdiction)
 
-    try:
-        query_embedding = state.embed_model.encode(
-            [request.proposed_specifications], normalize_embeddings=True, show_progress_bar=False
-        )[0].tolist()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Embedding error: {exc}") from exc
+    async def work(on_step):
+        on_step("embed", "active")
+        query_embedding = (await asyncio.to_thread(
+            state.embed_model.encode,
+            [request.proposed_specifications],
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        ))[0].tolist()
+        on_step("embed", "done")
 
-    # Step 1 — same pipeline as Phase 2
-    patent_results = await asyncio.to_thread(
-        run_patent_risk_pipeline,
-        query_embedding,
-        request.proposed_specifications,
-        request.proposed_specifications,
-        request.component_scope,
-        request.jurisdiction,
-    )
-
-    if not patent_results:
-        return DesignSuggestionResponse(
-            product_id=request.product_id,
-            original_risk_status="CLEAR",
-            suggestions=[],
-            proposals_generated=0,
-            proposals_passed=0,
+        # Step "risk" — same pipeline as Phase 2 (no sub-step granularity here;
+        # the risk-analysis page already shows that breakdown on its own)
+        on_step("risk", "active")
+        patent_results = await asyncio.to_thread(
+            run_patent_risk_pipeline,
+            query_embedding,
+            request.proposed_specifications,
+            request.proposed_specifications,
+            request.component_scope,
+            request.jurisdiction,
         )
+        on_step("risk", "done")
 
-    original_risk = _score_to_label(patent_results[0].get("risk_score", 0))
-    log.info("design-suggestions | original risk=%s (top score=%d)",
-             original_risk, patent_results[0].get("risk_score", 0))
+        if not patent_results:
+            on_step("design", "skipped")
+            on_step("audit", "skipped")
+            return DesignSuggestionResponse(
+                product_id=request.product_id,
+                original_risk_status="CLEAR",
+                suggestions=[],
+                proposals_generated=0,
+                proposals_passed=0,
+            ).model_dump()
 
-    # Skip the designer entirely when there is truly no risk signal at all — not just
-    # a low/CLEAR label (which still allows risk_score up to 9), but risk_score == 0
-    # AND no matched_elements on every assessed patent. Generating "design-arounds" for
-    # a spec with no actual overlap wastes tokens and risks the designer inventing
-    # unnecessary, less realistic changes to dodge generic, non-distinguishing terms.
-    no_real_risk = all(
-        r.get("risk_score", 0) == 0 and not r.get("matched_elements")
-        for r in patent_results
-    )
-    if no_real_risk:
-        log.info("design-suggestions | no real risk on any candidate — skipping designer")
+        original_risk = _score_to_label(patent_results[0].get("risk_score", 0))
+        log.info("design-suggestions | original risk=%s (top score=%d)",
+                 original_risk, patent_results[0].get("risk_score", 0))
+
+        # Skip the designer entirely when there is truly no risk signal at all — not
+        # just a low/CLEAR label (which still allows risk_score up to 9), but
+        # risk_score == 0 AND no matched_elements on every assessed patent. Generating
+        # "design-arounds" for a spec with no actual overlap wastes tokens and risks
+        # the designer inventing unnecessary, less realistic changes to dodge generic,
+        # non-distinguishing terms.
+        no_real_risk = all(
+            r.get("risk_score", 0) == 0 and not r.get("matched_elements")
+            for r in patent_results
+        )
+        if no_real_risk:
+            log.info("design-suggestions | no real risk on any candidate — skipping designer")
+            on_step("design", "skipped")
+            on_step("audit", "skipped")
+            return DesignSuggestionResponse(
+                product_id=request.product_id,
+                original_risk_status=original_risk,
+                suggestions=[],
+                proposals_generated=0,
+                proposals_passed=0,
+            ).model_dump()
+
+        # Step "design" — generate design-arounds, re-score each with run_patent_risk_pipeline
+        on_step("design", "active")
+        surviving_das = await asyncio.to_thread(
+            call_agent_designer,
+            request.proposed_specifications,
+            request.component_scope,
+            patent_results,
+            state.embed_model,
+            request.jurisdiction,
+        )
+        on_step("design", "done")
+
+        proposals_generated = 2  # designer always proposes 2
+        log.info("design-suggestions | %d/%d proposals passed risk filter",
+                 len(surviving_das), proposals_generated)
+
+        # Step "audit" — manufacturing audit on surviving proposals only. Proposals
+        # that change the fundamental construction type are rejected here, not just
+        # rewritten — so the final count can be lower than the risk-filter survivor
+        # count above.
+        on_step("audit", "active")
+        audited_das = await asyncio.to_thread(
+            call_agent_auditor, surviving_das, request.component_scope, request.proposed_specifications
+        )
+        on_step("audit", "done")
+        proposals_passed = len(audited_das)
+        log.info("design-suggestions | %d/%d proposals passed manufacturing audit",
+                 proposals_passed, len(surviving_das))
+
         return DesignSuggestionResponse(
             product_id=request.product_id,
             original_risk_status=original_risk,
-            suggestions=[],
-            proposals_generated=0,
-            proposals_passed=0,
-        )
+            suggestions=audited_das,
+            proposals_generated=proposals_generated,
+            proposals_passed=proposals_passed,
+        ).model_dump()
 
-    # Step 2 — generate design-arounds, re-score each with run_patent_risk_pipeline
-    surviving_das = await asyncio.to_thread(
-        call_agent_designer,
-        request.proposed_specifications,
-        request.component_scope,
-        patent_results,
-        state.embed_model,
-        request.jurisdiction,
-    )
-
-    proposals_generated = 2  # designer always proposes 2
-    log.info("design-suggestions | %d/%d proposals passed risk filter",
-             len(surviving_das), proposals_generated)
-
-    # Step 3 — manufacturing audit on surviving proposals only. Proposals that change
-    # the fundamental construction type are rejected here, not just rewritten — so the
-    # final count can be lower than the risk-filter survivor count above.
-    audited_das = await asyncio.to_thread(
-        call_agent_auditor, surviving_das, request.component_scope, request.proposed_specifications
-    )
-    proposals_passed = len(audited_das)
-    log.info("design-suggestions | %d/%d proposals passed manufacturing audit",
-             proposals_passed, len(surviving_das))
-
-    return DesignSuggestionResponse(
-        product_id=request.product_id,
-        original_risk_status=original_risk,
-        suggestions=audited_das,
-        proposals_generated=proposals_generated,
-        proposals_passed=proposals_passed,
-    )
+    return StreamingResponse(stream_sse(work), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------
 # Phase 4 — Innovation Opportunities
 # ---------------------------------------------------------------------------
 
-@router.post("/api/v1/innovation", response_model=InnovationResponse)
+@router.post("/api/v1/innovation")
 async def innovation_analysis(request: InnovationRequest):
     """
-    Phase 4: Corpus-wide patent gap and innovation opportunity analysis.
+    Phase 4: Corpus-wide patent gap and innovation opportunity analysis. Streams
+    pipeline progress (see module docstring), step ids: corpus, trends, analyst,
+    innovator.
 
-      Step 1 — Fetch up to 30 patents, ranked by semantic relevance to the domain
-               (or most recent if no domain is given), with representative claim chunks
-      Step 2 — Aggregate publication dates into a year-by-year trend (no LLM)
-      Step 3 — LLM Analyst: group patents into technology clusters, identify whitespace gaps
-      Step 4 — LLM Innovator: generate actionable innovation vectors from the gaps
+      Step "corpus"    — fetch up to 30 patents, ranked by semantic relevance to the
+                         domain (or most recent if no domain given), with
+                         representative claim chunks
+      Step "trends"    — aggregate publication dates into a year-by-year trend (no LLM)
+      Step "analyst"   — LLM groups patents into technology clusters, identifies
+                         whitespace gaps
+      Step "innovator" — LLM generates actionable innovation vectors from the gaps
     """
     log.info(
         "innovation | domain=%r scope=%s jurisdiction=%s",
         request.domain, request.scope, request.jurisdiction,
     )
 
-    domain_embedding = None
-    if request.domain.strip():
-        try:
-            domain_embedding = state.embed_model.encode(
-                [request.domain], normalize_embeddings=True, show_progress_bar=False
-            )[0].tolist()
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Embedding error: {exc}") from exc
+    async def work(on_step):
+        domain_embedding = None
+        if request.domain.strip():
+            domain_embedding = (await asyncio.to_thread(
+                state.embed_model.encode,
+                [request.domain],
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            ))[0].tolist()
 
-    try:
         result = await asyncio.to_thread(
             run_innovation_pipeline,
             request.domain,
@@ -667,13 +710,11 @@ async def innovation_analysis(request: InnovationRequest):
             request.jurisdiction,
             request.focus_prompt,
             domain_embedding,
+            on_step=on_step,
         )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return InnovationResponse(**result).model_dump()
 
-    return InnovationResponse(**result)
+    return StreamingResponse(stream_sse(work), media_type="text/event-stream")
 
 
 @router.post("/api/v1/innovation/save", response_model=SavedInnovationSummary)

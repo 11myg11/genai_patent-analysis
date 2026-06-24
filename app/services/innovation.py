@@ -8,6 +8,10 @@ Pipeline (run_innovation_pipeline):
   Step 3 — call_agent_analyst: cluster patents into technology groups, identify whitespace gaps.
   Step 4 — call_agent_innovator: generate actionable innovation vectors from the gaps.
 
+run_innovation_pipeline accepts an optional on_step(step_id, status) callback
+("corpus"/"trends"/"analyst"/"innovator") for live progress streamed to the
+browser — see app/services/progress.py.
+
 Persistence functions (save / list / get / delete):
   save_analysis         — insert a completed analysis into innovation_analyses table
   list_saved_analyses   — fetch all saved analyses as summaries (no heavy JSONB in list)
@@ -27,12 +31,13 @@ Scope parameter controls which section_types are fetched per patent:
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import HTTPException
 
 from app.config import GLASS_TOTAL_MIN, GLASS_TOTAL_MAX, PVB_MIN_MM, PVB_MAX_MM
 from app.services.llm import llm_json
+from app.services.progress import noop_on_step
 from app.state import state
 
 log = logging.getLogger(__name__)
@@ -288,17 +293,28 @@ def run_innovation_pipeline(
     jurisdiction: str,
     focus_prompt: str,
     domain_embedding: Optional[List[float]],
+    on_step: Optional[Callable[[str, str], None]] = None,
 ) -> Dict[str, Any]:
     """
     Full innovation analysis pipeline. Steps 1-4 in sequence.
     Returns a dict matching the InnovationResponse schema.
+
+    on_step(step_id, status), if given, reports live progress for the browser
+    ("corpus"/"trends"/"analyst"/"innovator") — see app/services/progress.py.
     """
+    step = on_step or noop_on_step
+
+    step("corpus", "active")
     overviews    = fetch_corpus_overview(jurisdiction, scope, domain_embedding, domain)
     patent_count = len(overviews)
     patent_ids   = [o["id"] for o in overviews if o.get("id")]
+    step("corpus", "done")
 
     if not overviews:
         log.warning("run_innovation_pipeline: no patents in corpus — returning empty response")
+        step("trends", "skipped")
+        step("analyst", "skipped")
+        step("innovator", "skipped")
         return {
             "domain":       domain or "General patent corpus",
             "patent_count": 0,
@@ -309,11 +325,19 @@ def run_innovation_pipeline(
             "trend_data":   [],
         }
 
+    step("trends", "active")
     trend_data      = extract_trend_data(jurisdiction)
+    step("trends", "done")
+
+    step("analyst", "active")
     analyst_result  = call_agent_analyst(overviews, domain, focus_prompt)
     clusters        = analyst_result.get("clusters", [])
     gaps            = analyst_result.get("gaps", [])
+    step("analyst", "done")
+
+    step("innovator", "active")
     innovations     = call_agent_innovator(clusters, gaps, domain, focus_prompt)
+    step("innovator", "done")
 
     log.info(
         "run_innovation_pipeline complete: patents=%d clusters=%d gaps=%d innovations=%d",

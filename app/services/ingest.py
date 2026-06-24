@@ -17,21 +17,26 @@ Pipeline (in order):
   9. Bulk-insert patent_chunks rows (embedding as pgvector string "[x,y,z,...]")
 
 Functions:
-  ingest_pdf(pdf_bytes, filename, supabase, embed_model, [overrides]) -> dict
+  ingest_pdf(pdf_bytes, filename, supabase, embed_model, [overrides], on_step=None) -> dict
     Returns a summary dict with patent_id, chunks_inserted, language, translated,
     and the final metadata. Raises RuntimeError on PDF open failure so the caller
     can translate it to an HTTP 400.
     This function is synchronous — call it with asyncio.to_thread() from async routes.
+    on_step(step_id, status), if given, is called at each pipeline stage boundary
+    with status "active"/"done"/"skipped" — used to stream live progress to the
+    browser (see app/services/progress.py). Step ids: read, translate, save_record,
+    extract, embed, index.
 """
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import fitz
 
 from app.config import BATCH_SIZE, META_EXTRACT_PAGES, UPLOAD_DIR
 from app.services.llm import llm_json
+from app.services.progress import noop_on_step
 from app.utils.metadata import extract_metadata
 from app.utils.pdf import extract_page_text, extract_figure_pages, split_into_chunks
 from app.utils.translation import detect_language, translate_chunks, translate_to_english
@@ -66,10 +71,13 @@ def ingest_pdf(
     assignee: str = "",
     jurisdiction: str = "",
     pub_date: str = "",
+    on_step: Optional[Callable[[str, str], None]] = None,
 ) -> Dict[str, Any]:
+    step = on_step or noop_on_step
     safe_stem = Path(filename).stem.replace("/", "_").replace("\\", "_")
     tmp_path = UPLOAD_DIR / f"ingest_{safe_stem}.pdf"
 
+    step("read", "active")
     try:
         tmp_path.write_bytes(pdf_bytes)
         doc = fitz.open(str(tmp_path))
@@ -88,7 +96,9 @@ def ingest_pdf(
 
         src_lang = detect_language(header_text, patent_number or safe_stem)
         is_english = src_lang.startswith("en")
+        step("read", "done")
 
+        step("translate", "active")
         # Translate header to English so regex + LLM metadata extraction works
         header_en = header_text
         if not is_english and header_text.strip():
@@ -114,6 +124,7 @@ def ingest_pdf(
                         auto_meta[k] = v.strip()
             except Exception as exc:
                 log.warning("LLM metadata enrichment skipped: %s", exc)
+        step("translate", "done")
 
         # User-supplied form values win over auto-extracted
         final_number = patent_number.strip() or auto_meta["patent_number"] or safe_stem
@@ -125,6 +136,7 @@ def ingest_pdf(
         log.info("Metadata → number=%s title=%s assignee=%s jx=%s date=%s",
                  final_number, final_title, final_assign, final_jx, final_date)
 
+        step("save_record", "active")
         db_resp = supabase.table("patent_documents").upsert(
             {
                 "patent_number":    final_number,
@@ -137,7 +149,9 @@ def ingest_pdf(
         ).execute()
         patent_id: str = db_resp.data[0]["id"]
         log.info("Upserted patent_documents → id=%s", patent_id)
+        step("save_record", "done")
 
+        step("extract", "active")
         # Extract text from all pages into one full-document string first (Fix 1).
         # Processing page-by-page caused claims that span page boundaries to be
         # split into two incomplete fragments, neither of which was classifiable.
@@ -176,8 +190,11 @@ def ingest_pdf(
                 supabase.table("patent_images").insert(record).execute()
                 images_inserted += 1
             log.info("Stored %d figure images for patent=%s", images_inserted, final_number)
+        step("extract", "done")
 
         if not all_chunks:
+            step("embed", "skipped")
+            step("index", "skipped")
             return {
                 "patent_id":       patent_id,
                 "chunks_inserted": 0,
@@ -187,6 +204,7 @@ def ingest_pdf(
                 "warning": "No text content extracted from PDF.",
             }
 
+        step("embed", "active")
         all_chunks = translate_chunks(all_chunks, src_lang)
 
         log.info("Generating embeddings for %d chunks…", len(all_chunks))
@@ -194,7 +212,9 @@ def ingest_pdf(
         embeddings = embed_model.encode(
             texts, normalize_embeddings=True, show_progress_bar=False, batch_size=BATCH_SIZE
         )
+        step("embed", "done")
 
+        step("index", "active")
         # pgvector via Supabase REST requires the string format "[x,y,z,...]" — not a Python list
         records = [
             {
@@ -214,6 +234,7 @@ def ingest_pdf(
             # on any real failure (constraint violation, RLS block, schema mismatch).
             supabase.table("patent_chunks").insert(batch).execute()
             total += len(batch)
+        step("index", "done")
 
         log.info("Ingest complete: patent=%s chunks=%d images=%d lang=%s translated=%s",
                  final_number, total, images_inserted, src_lang, not is_english)

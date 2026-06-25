@@ -44,6 +44,49 @@ _JX_MAP = {
 }
 
 
+# Corporate suffixes that mark a clean stop point between company name and
+# address — covers US (Inc/LLC/Corp/Co/Ltd), DE (GmbH/AG/KGaA/Aktien-
+# gesellschaft), UK (Plc), NL (N.V./B.V.), FR/IT/ES (S.A./S.p.A./S.L./S.r.l.),
+# and Asian (often appearing as the compound form "Co., Ltd.").
+_SINGLE_CORP_SUFFIX = (
+    r'(?:Inc|LLC|Ltd|Corp(?:oration)?|Co|GmbH|AG|KGaA|Plc|'
+    r'Aktiengesellschaft|'
+    r'N\.?\s*V\.?|S\.?\s*A\.?(?:\.?\s*p\.?\s*A\.?)?|S\.?\s*L\.?|Pty|'
+    r'B\.?\s*V\.?|S\.?\s*r\.?\s*l\.?)'
+)
+# Full pattern accepts one suffix optionally followed by more suffixes joined
+# by commas/spaces ("Co., Ltd.", "Co. Ltd.", "Co., Ltd., LLC"). Without this
+# the post-processor would cut "Toyota Motor Co., Ltd." → "Toyota Motor Co.",
+# discarding a legitimate part of the company name.
+_CORP_SUFFIX_PATTERN = rf'\b{_SINGLE_CORP_SUFFIX}\.?(?:\s*,?\s*{_SINGLE_CORP_SUFFIX}\.?)*'
+
+
+def _clean_assignee(raw: str) -> str:
+    """Post-process a raw regex-captured assignee string.
+
+    Two jobs:
+      1. Collapse interleaved whitespace/newlines (OCR'd two-column patent
+         layouts inject newlines and citation fragments mid-name).
+      2. Drop the trailing address at the first corporate-suffix + punctuation
+         boundary, so 'FOO INC., Grand Cayman (KY)' → 'FOO INC.' rather than
+         a mid-word slice. Cleaner output than keeping address fragments that
+         the OCR may have mangled anyway.
+
+    If no corporate suffix is found (e.g. assignees like 'Bayerische Motoren
+    Werke Aktiengesellschaft' that don't end in a recognised abbreviation),
+    the value is returned with whitespace collapsed but untrimmed — better to
+    keep extra text than to throw away a legitimate name.
+    """
+    # Strip trailing comma/semicolon/colon only — not '.' — because patent
+    # assignees frequently end with an abbreviation period ("INC.", "CO.")
+    # that we want to preserve as part of the canonical name.
+    val = re.sub(r'\s+', ' ', raw).strip().rstrip(',;:')
+    m = re.match(rf'^(.+?{_CORP_SUFFIX_PATTERN})\s*[,.]', val, re.IGNORECASE)
+    if m:
+        val = m.group(1).rstrip(',;:')
+    return val
+
+
 def extract_metadata(text: str, filename_hint: str = "") -> Dict[str, str]:
     """
     Regex-only metadata extraction — no network calls, no quota.
@@ -107,22 +150,31 @@ def extract_metadata(text: str, filename_hint: str = "") -> Dict[str, str]:
             except ValueError:
                 pass
 
-    # Assignee — INID code (73) first
-    m = re.search(r'\(73\)\s*(?:Assignee|Applicant)[:\s]+([^\n\r(]{3,80})', text, re.IGNORECASE)
+    # Assignee — INID code (73) first.
+    # IMPORTANT: char classes here allow \n\r intentionally. OCR'd two-column
+    # patent layouts interleave assignee text with citation lines, so the
+    # field often wraps mid-name across newlines (e.g.
+    #   "GLOBALFOUNDRIES INC., Grand\nCayman (KY)"). The previous
+    # [^\n\r(] char class stopped at the first newline and produced
+    # mid-word truncations like "GLOBALFOUNDRIES INC., Grand". We now allow
+    # the match to span newlines (still bounded by "(" — the next INID code
+    # opener — and a generous char cap), then post-process via
+    # _clean_assignee to drop the trailing address.
+    m = re.search(r'\(73\)\s*(?:Assignee|Applicant)[:\s]+([^(]{3,150})', text, re.IGNORECASE)
     if m:
-        meta["assignee"] = m.group(1).strip().rstrip(',.')
+        meta["assignee"] = _clean_assignee(m.group(1))
     if not meta["assignee"]:
         m = re.search(
             r'(?:Assignee|Applicant|Anmelder|Titulaire|Patentinhaber)[:\s]+'
-            r'([A-Z][^\n\r(]{3,80}?)(?=\s*[\n\r(]|\s*,\s*[A-Z]{2}\b)',
-            text, re.IGNORECASE,
+            r'([A-Z][^(]{3,150}?)(?=\(|\s*,\s*[A-Z]{2}\b)',
+            text, re.IGNORECASE | re.DOTALL,
         )
         if m:
-            meta["assignee"] = m.group(1).strip().rstrip(',.')
+            meta["assignee"] = _clean_assignee(m.group(1))
     if not meta["assignee"]:
-        m = re.search(r'(?:ASSIGNEE|APPLICANT)[:\s]+([A-Z][^\n\r]{3,80})', text)
+        m = re.search(r'(?:ASSIGNEE|APPLICANT)[:\s]+([A-Z][^(]{3,150})', text, re.DOTALL)
         if m:
-            meta["assignee"] = m.group(1).strip().rstrip(',.')
+            meta["assignee"] = _clean_assignee(m.group(1))
 
     # Title — INID code (54) first.
     # USPTO two-column OCR interleaves title lines with reference citations, so we

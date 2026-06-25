@@ -418,8 +418,10 @@ def _score_to_label(score: int) -> str:
 # top_n widens the safety net (checks more candidate patents per proposal); the
 # score_floor keeps that affordable by skipping the LLM call for candidates that
 # clearly aren't close matches (uses scores already computed during retrieval,
-# no extra embedding or LLM call).
-DESIGNER_RESCORE_TOP_N       = 5
+# no extra embedding or LLM call). Lowered from 5 to keep the design-suggestions
+# wait time reasonable without meaningfully narrowing the safety net (the
+# top-ranked candidates carry almost all the risk).
+DESIGNER_RESCORE_TOP_N       = 3
 DESIGNER_RESCORE_SCORE_FLOOR = 0.2
 
 # Refinement-loop constant (Option A) — also fixed, independent of corpus size. A

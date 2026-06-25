@@ -388,6 +388,17 @@ function innovationPage() {
     ],
     init() {
       try {
+        // A handoff from Design Improvements (via its banner button) takes priority
+        // over the regular "last used form" memory below — see the matching comment
+        // in design-suggestions.html's init() for why the stale result is cleared too.
+        const handoff = sessionStorage.getItem('design_to_innovation_handoff');
+        if (handoff) {
+          this.form = { ...this.form, ...JSON.parse(handoff) };
+          sessionStorage.removeItem('design_to_innovation_handoff');
+          sessionStorage.removeItem('innovation_last_result');
+          this.loadSavedList();
+          return;
+        }
         const saved = sessionStorage.getItem('innovation_last_result');
         if (saved) {
           this.result = JSON.parse(saved);

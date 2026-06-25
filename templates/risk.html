@@ -104,9 +104,23 @@
         <p class="label mb-1">Token Budget Used</p>
         <p class="font-mono text-sm" style="color:var(--text2)" x-text="result ? '~' + result.token_budget_used + ' tokens' : ''"></p>
       </div>
-      <div class="ml-auto">
-        <a href="/design-suggestions" class="btn btn-secondary" style="font-size:12px;padding:7px 16px">→ Go to Design Improvements</a>
+    </div>
+
+    <!-- Risk → Design Improvements handoff banner — only surfaces when there's
+         actually something to act on (HIGH/MEDIUM). Clicking it stashes the
+         current form in sessionStorage so Design Improvements opens pre-filled;
+         the sidebar nav link to that page is untouched, so navigating there
+         directly still starts from an empty form. -->
+    <div x-show="result && (result.risk_status==='HIGH' || result.risk_status==='MEDIUM')" x-transition
+         class="card p-5 flex items-center gap-4" style="border-radius:16px;border-color:rgba(0,135,90,0.2);background:rgba(0,135,90,0.04)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="flex-shrink:0">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#00875a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <p class="text-sm font-semibold text-white">Significant patent overlap detected.</p>
+        <p class="text-xs mt-0.5" style="color:var(--text3)">Generate design-around proposals that avoid the conflicting claims.</p>
       </div>
+      <button class="btn btn-secondary ml-auto" style="font-size:12px;padding:8px 20px;white-space:nowrap" @click="goToDesignImprovements()">Generate Design Improvements →</button>
     </div>
 
     <!-- Patent assessment cards -->
@@ -222,18 +236,6 @@
       </template>
     </div>
 
-    <!-- Next step CTA -->
-    <div class="card p-5 flex items-center gap-4" style="border-radius:16px;border-color:rgba(0,135,90,0.2);background:rgba(0,135,90,0.04)">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="flex-shrink:0">
-        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#00875a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <div>
-        <p class="text-sm font-semibold text-white">Risk identified? Get design-around proposals.</p>
-        <p class="text-xs mt-0.5" style="color:var(--text3)">Head to the Design &amp; Innovation tab to generate alternative designs that avoid IP conflicts.</p>
-      </div>
-      <a href="/design-suggestions" class="btn btn-secondary ml-auto" style="font-size:12px;padding:8px 20px;white-space:nowrap">Open Design Improvements →</a>
-    </div>
-
   </div><!-- end results -->
 
 </div><!-- end Alpine root -->
@@ -264,6 +266,20 @@ function riskPage() {
     sortedAssessments() {
       if (!this.result || !this.result.patent_assessments) return [];
       return [...this.result.patent_assessments].sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0));
+    },
+    goToDesignImprovements() {
+      // Hand the current inputs to Design Improvements via sessionStorage — read
+      // once and deleted there, so it only ever applies on this explicit click,
+      // never on a plain sidebar nav visit to that page.
+      try {
+        sessionStorage.setItem('risk_to_design_handoff', JSON.stringify({
+          product_id:      this.form.product_id,
+          component_scope: this.form.component_scope,
+          specs:           this.form.specs,
+          jurisdiction:    this.form.jurisdiction,
+        }));
+      } catch(e) {}
+      window.location.href = '/design-suggestions';
     },
     reset() {
       this.result = null; this.errorMsg = '';

@@ -13,6 +13,7 @@ Endpoints:
   PATCH  /api/v1/patents/{patent_id}              → partial metadata update
   DELETE /api/v1/patents/{patent_id}              → delete patent + chunks + images
   GET    /api/v1/patents/{patent_id}/summary      → LLM-generated summary
+  GET    /api/v1/patents/{patent_id}/sheet/pdf    → per-patent Analysis Sheet PDF
   GET    /api/v1/patents/{patent_id}/images       → list figure metadata
   GET    /api/v1/images/{image_id}               → stream a single figure as PNG
   POST   /api/v1/compare                         → compare two patents
@@ -80,6 +81,7 @@ from app.services.management_summary import (
     get_summary,
     delete_summary,
 )
+from app.services.patent_sheet import build_patent_sheet_pdf
 from app.services.progress import stream_sse
 from app.services.retrieval import (
     call_agent_auditor,
@@ -297,8 +299,12 @@ async def delete_patent(patent_id: str):
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@router.get("/api/v1/patents/{patent_id}/summary")
-async def get_patent_summary(patent_id: str):
+async def _generate_patent_summary(patent_id: str) -> tuple[dict, dict, int]:
+    """Shared helper: fetch a patent + its chunks and run the analyst LLM
+    prompt. Returns (doc, summary, chunk_count). Used by both the JSON
+    summary endpoint (for the Patent Library UI card) and the PDF sheet
+    endpoint — llm_json caches by SHA-256, so back-to-back calls with the
+    same prompt are free."""
     try:
         def _query():
             doc = (
@@ -321,16 +327,25 @@ async def get_patent_summary(patent_id: str):
     chunks  = chunks_resp.data or []
     context = "\n\n".join(f"[{c['section_type'].upper()}] {c['content']}" for c in chunks)
 
+    # Single LLM call produces both the existing UI summary fields AND the
+    # additional fields needed for the new Patent Analysis Sheet PDF.
     prompt = f"""You are a patent analyst. Given the following patent content, produce a JSON summary.
 Respond ONLY with minified JSON. No markdown. No explanation outside JSON.
 
+Extract bibliographic fields directly from the patent text where stated; if a
+field is not present in the text, return an empty string for that field — do
+NOT invent values. For "countries", return a comma-separated list of country
+codes / names where the patent is published or designated (e.g. "EP, DE, US").
+
 Output schema:
-{{"abstract":"2-3 sentence technical abstract","key_claims":["claim1","claim2","claim3"],"technology_domain":"...","novelty_statement":"...","commercial_relevance":"..."}}
+{{"abstract":"2-3 sentence technical abstract","key_claims":["claim1","claim2","claim3"],"technology_domain":"...","novelty_statement":"...","commercial_relevance":"...","application_date":"YYYY-MM-DD or empty","legal_status":"e.g. Granted / Pending / Expired / Withdrawn — empty if unknown","countries":"comma-separated codes","technical_issue":"2-3 sentences: what problem this patent solves","technical_solution":"2-3 sentences: how the patent solves it (core inventive step)","patent_assessment":"2-3 sentences: claim breadth, enforceability, technical strength, commercial relevance","risk_analysis":"2-3 sentences: how dangerous this patent is for a competitor entering this technology space (in general, no specific design assumed)"}}
 
 PATENT: {doc.get('patent_number')} — {doc.get('title')}
 ASSIGNEE: {doc.get('assignee')}
+JURISDICTION: {doc.get('jurisdiction')}
+PUBLICATION_DATE: {doc.get('publication_date')}
 CONTENT:
-{context[:3000]}"""
+{context[:3500]}"""
 
     try:
         summary = llm_json(prompt)
@@ -339,9 +354,32 @@ CONTENT:
             "abstract": "Summary generation failed.",
             "key_claims": [], "technology_domain": "",
             "novelty_statement": "", "commercial_relevance": "",
+            "application_date": "", "legal_status": "", "countries": "",
+            "technical_issue": "", "technical_solution": "",
+            "patent_assessment": "", "risk_analysis": "",
         }
 
-    return {"document": doc, "summary": summary, "chunk_count": len(chunks)}
+    return doc, summary, len(chunks)
+
+
+@router.get("/api/v1/patents/{patent_id}/summary")
+async def get_patent_summary(patent_id: str):
+    doc, summary, chunk_count = await _generate_patent_summary(patent_id)
+    return {"document": doc, "summary": summary, "chunk_count": chunk_count}
+
+
+@router.get("/api/v1/patents/{patent_id}/sheet/pdf")
+async def download_patent_sheet_pdf(patent_id: str):
+    """Render the per-patent Analysis Sheet PDF and stream it back.
+    Re-uses the same LLM summary as /summary (cached by prompt hash)."""
+    doc, summary, _ = await _generate_patent_summary(patent_id)
+    pdf_bytes = await asyncio.to_thread(build_patent_sheet_pdf, doc, summary)
+    fname = f"patent-sheet-{(doc.get('patent_number') or patent_id)}.pdf".replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @router.get("/api/v1/patents/{patent_id}/images")

@@ -242,7 +242,19 @@
 
           <!-- LLM Summary -->
           <div x-show="summary" x-transition class="card p-5 flex flex-col gap-4" style="border-radius:14px">
-            <p class="label">AI Technical Brief</p>
+            <div class="flex items-center justify-between">
+              <p class="label">AI Technical Brief</p>
+              <a class="btn btn-secondary" style="font-size:12px;padding:6px 12px"
+                 :href="selected ? '/api/v1/patents/'+selected.id+'/sheet/pdf' : '#'"
+                 :data-dl-label="selected ? selected.patent_number + ' — ' + (selected.title || 'Untitled') : ''"
+                 data-dl-type="Patent Analysis Sheet"
+                 target="_blank" rel="noopener">
+                <span style="display:inline-flex;align-items:center;gap:6px">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  Download Analysis Sheet (PDF)
+                </span>
+              </a>
+            </div>
             <div class="grid grid-cols-2 gap-4">
               <div><p class="label mb-2">Abstract</p><p class="text-sm leading-relaxed" style="color:var(--text)" x-text="summary.abstract"></p></div>
               <div>

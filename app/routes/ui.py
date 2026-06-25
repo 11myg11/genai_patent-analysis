@@ -9,6 +9,7 @@ Routes:
   GET /design-suggestions → Phase 3 — design suggestions built on risk output
   GET /innovation         → Phase 4 — innovation opportunities or improvement ideas for gaps or common patterns
   GET /summaries          → list of generated Management Summary PDFs
+  GET /downloads          → Download Center: recently downloaded PDFs (client-side history)
 """
 import asyncio
 import logging
@@ -124,3 +125,13 @@ async def page_innovation(request: Request):
 async def page_summaries(request: Request):
     """List of generated Management Summary PDFs."""
     return templates.TemplateResponse(request=request, name="summaries.html")
+
+
+@router.get("/downloads", include_in_schema=False)
+async def page_downloads(request: Request):
+    """Download Center — recent PDF downloads for the current browser.
+
+    History lives in the browser's localStorage (populated by the global
+    click-tracker in base.html), so no server-side state is needed and this
+    handler just renders an empty Alpine page that hydrates on the client."""
+    return templates.TemplateResponse(request=request, name="downloads.html")

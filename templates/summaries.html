@@ -35,7 +35,10 @@
           <p class="text-xs mt-0.5" style="color:var(--text3)"
              x-text="(item.domain ? item.domain + ' · ' : '') + new Date(item.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})"></p>
         </div>
-        <a :href="`/api/v1/management-summaries/${item.id}/pdf`" class="btn btn-secondary" style="font-size:11px;padding:5px 14px">Download</a>
+        <a :href="`/api/v1/management-summaries/${item.id}/pdf`"
+           :data-dl-label="(item.product_id || 'Unnamed product') + (item.domain ? ' · ' + item.domain : '')"
+           data-dl-type="Management Summary"
+           class="btn btn-secondary" style="font-size:11px;padding:5px 14px">Download</a>
         <button @click="deleteReport(item.id)"
                 style="padding:5px 10px;border-radius:7px;border:1px solid rgba(239,68,68,0.22);background:rgba(239,68,68,0.06);color:#f87171;font-size:11px;cursor:pointer;transition:background 0.15s"
                 @mouseenter="$el.style.background='rgba(239,68,68,0.13)'"

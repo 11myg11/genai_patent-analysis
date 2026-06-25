@@ -465,6 +465,14 @@
       </a>
 
       <div class="nav-label" style="margin-top:20px">Quick Access</div>
+
+      <a href="/downloads" class="nav-link {% if page == '/downloads' %}active{% endif %}" style="font-size:12px">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+        </svg>
+        <span>Download Center</span>
+      </a>
+
       <a href="http://localhost:8000/docs" target="_blank" class="nav-link" style="font-size:12px">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
           <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
@@ -493,5 +501,44 @@
   </div>
 
 </div>
+
+<!--
+  Download Center tracking — captures any click on an <a> whose href ends in
+  /pdf and persists a deduped, newest-first list of recent PDF downloads to
+  localStorage so the /downloads page can render them without a server-side
+  history table. Links can opt-in to richer labels via data-dl-label /
+  data-dl-type attributes; otherwise the URL is used as a fallback label.
+-->
+<script>
+  (function() {
+    const KEY = 'patentos.downloads';
+    const MAX = 30;
+
+    window.recordDownload = function(entry) {
+      // entry = { url, label, type }
+      try {
+        const list = JSON.parse(localStorage.getItem(KEY) || '[]');
+        // Dedupe by url+label: re-downloading the same PDF moves it to the top
+        // rather than creating a second history row.
+        const filtered = list.filter(e => !(e.url === entry.url && e.label === entry.label));
+        filtered.unshift({ ...entry, ts: Date.now() });
+        localStorage.setItem(KEY, JSON.stringify(filtered.slice(0, MAX)));
+      } catch (e) { /* localStorage unavailable — silently skip */ }
+    };
+
+    document.addEventListener('click', function(ev) {
+      const a = ev.target.closest('a[href]');
+      if (!a) return;
+      const href = a.getAttribute('href') || '';
+      if (!href.match(/\/pdf(\?|$)/i)) return;
+      window.recordDownload({
+        url:   href,
+        label: a.dataset.dlLabel || href,
+        type:  a.dataset.dlType  || 'PDF',
+      });
+    }, true);
+  })();
+</script>
+
 </body>
 </html>

@@ -78,10 +78,6 @@
         </span>
       </button>
       <button class="btn btn-secondary" @click="reset()">Clear</button>
-      <div class="ml-3 flex items-center gap-2">
-        <div style="width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 6px var(--teal)"></div>
-        <span class="text-xs" style="color:var(--text3)">Pattern detection · Gap analysis · Innovation vector generation</span>
-      </div>
     </div>
   </div>
 
@@ -366,6 +362,7 @@
 function innovationPage() {
   return {
     loading: false,
+    pipelineDone: false,
     result: null,
     errorMsg: '',
     saved_id: null,
@@ -401,7 +398,7 @@ function innovationPage() {
       } catch(e) {}
       this.loadSavedList();
     },
-    pipelineOpen() { return this.loading || !!this.errorMsg; },
+    pipelineOpen() { return this.loading || this.pipelineDone || !!this.errorMsg; },
     _updateStats() {
       if (!this.result) return;
       this.stats.cluster_count = this.result.clusters?.length ?? 0;
@@ -448,6 +445,8 @@ function innovationPage() {
             sessionStorage.setItem('innovation_last_form', JSON.stringify(this.form));
           } catch(e) {}
           this.loading = false;
+          this.pipelineDone = true;
+          setTimeout(() => { this.pipelineDone = false; }, 1300);
         },
         onError: (msg) => {
           this.stages.forEach(s => { if (s.status === 'active') s.status = 'error'; });

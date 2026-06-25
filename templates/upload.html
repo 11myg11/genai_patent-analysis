@@ -187,7 +187,7 @@
 <script>
 function uploadPage() {
   return {
-    file: null, dragging: false, ingesting: false, extracting: false,
+    file: null, dragging: false, ingesting: false, extracting: false, pipelineDone: false,
     autoFilled: false, detectedLang: '',
     resultMsg: '', resultOk: false,
     form: { patent_number:'', title:'', assignee:'', jurisdiction:'US', pub_date:'' },
@@ -203,7 +203,7 @@ function uploadPage() {
 
     init() {},
 
-    pipelineOpen() { return this.ingesting || (this.resultMsg && !this.resultOk); },
+    pipelineOpen() { return this.ingesting || this.pipelineDone || (this.resultMsg && !this.resultOk); },
 
     clearForm() {
       this.form = { patent_number:'', title:'', assignee:'', jurisdiction:'US', pub_date:'' };
@@ -279,6 +279,8 @@ function uploadPage() {
           const lr = await fetch('/api/v1/patents');
           this.recentPatents = await lr.json();
           this.ingesting = false;
+          this.pipelineDone = true;
+          setTimeout(() => { this.pipelineDone = false; }, 1300);
         },
         onError: (msg) => {
           this.stages.forEach(s => { if (s.status === 'active') s.status = 'error'; });

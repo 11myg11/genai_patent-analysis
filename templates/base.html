@@ -123,21 +123,19 @@
       padding: 28px 20px 24px;
       border-bottom: 1px solid rgba(255,255,255,0.12);
     }
-    .brand-icon {
-      width: 32px; height: 32px; border-radius: 8px;
-      background: rgba(255,255,255,0.18);
+    .brand-logo-placeholder {
+      width: 100%; height: 40px; border-radius: 8px;
+      background: rgba(255,255,255,0.08);
+      border: 1px dashed rgba(255,255,255,0.3);
       display: flex; align-items: center; justify-content: center;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
+      font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+      text-transform: uppercase; color: rgba(255,255,255,0.4);
     }
     .brand-name {
       font-family: 'Syne', sans-serif;
       font-size: 17px; font-weight: 800;
       color: #fff; letter-spacing: -0.01em;
-    }
-    .brand-sub {
-      font-size: 10px; font-weight: 500;
-      color: rgba(255,255,255,0.5); letter-spacing: 0.12em;
-      text-transform: uppercase; margin-top: 1px;
     }
     /* ── Nav ── */
     .nav-section {
@@ -404,13 +402,10 @@
   <aside class="sidebar">
     <!-- Brand -->
     <div class="brand">
-      <div class="brand-icon">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </div>
+      <!-- Placeholder for the Fuyao company logo — no brand approval yet, so this
+           is a generic "Logo" frame rather than any reproduction of the real mark. -->
+      <div class="brand-logo-placeholder">Logo</div>
       <div class="brand-name">PatentOS</div>
-      <div class="brand-sub">IP Intelligence Platform</div>
     </div>
 
     <!-- Navigation -->
@@ -473,10 +468,7 @@
     <div class="sidebar-footer">
       <div class="status-pill">
         <div class="status-dot"></div>
-        <div>
-          <div style="font-size:11px;font-weight:600;color:#fff">System Online</div>
-          <div style="font-size:10px;color:rgba(255,255,255,0.45)">v1.0 · Gemini Flash</div>
-        </div>
+        <div style="font-size:11px;font-weight:600;color:#fff">System Online</div>
       </div>
     </div>
   </aside>

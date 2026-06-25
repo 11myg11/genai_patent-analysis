@@ -63,7 +63,6 @@
         </span>
       </button>
       <button class="btn btn-secondary" @click="reset()">Clear</button>
-      <span class="text-xs ml-2" style="color:var(--text3)">Hybrid vector + full-text search · dual-agent IP assessment</span>
     </div>
   </div>
 
@@ -243,6 +242,7 @@
 function riskPage() {
   return {
     loading: false,
+    pipelineDone: false,
     result: null,
     errorMsg: '',
     form: { product_id: '', component_scope: 'Automotive laminated windshield', specs: '', jurisdiction: 'ALL' },
@@ -260,7 +260,7 @@ function riskPage() {
         if (savedForm) this.form = { ...this.form, ...JSON.parse(savedForm) };
       } catch(e) {}
     },
-    pipelineOpen() { return this.loading || !!this.errorMsg; },
+    pipelineOpen() { return this.loading || this.pipelineDone || !!this.errorMsg; },
     sortedAssessments() {
       if (!this.result || !this.result.patent_assessments) return [];
       return [...this.result.patent_assessments].sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0));
@@ -297,6 +297,8 @@ function riskPage() {
             sessionStorage.setItem('risk_last_form', JSON.stringify(this.form));
           } catch(e) {}
           this.loading = false;
+          this.pipelineDone = true;
+          setTimeout(() => { this.pipelineDone = false; }, 1300);
         },
         onError: (msg) => {
           this.stages.forEach(s => { if (s.status === 'active') s.status = 'error'; });

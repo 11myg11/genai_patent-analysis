@@ -50,10 +50,6 @@
         </span>
       </button>
       <button class="btn btn-secondary" @click="reset()">Clear</button>
-      <div class="ml-3 flex items-center gap-2">
-        <div style="width:6px;height:6px;border-radius:50%;background:#00875a;box-shadow:0 0 6px #00875a"></div>
-        <span class="text-xs" style="color:var(--text3)">Design-around generation + Fuyao manufacturing audit loop</span>
-      </div>
     </div>
 
     <!-- Loading notice — the re-check + refinement loop can genuinely take a few minutes -->
@@ -163,7 +159,7 @@
 <script>
 function designSuggestionsPage(){
   return {
-    loading:false, result:null, errorMsg:'', isQuotaError:false,
+    loading:false, pipelineDone:false, result:null, errorMsg:'', isQuotaError:false,
     form:{ product_id:'', component_scope:'Automotive laminated windshield', specs:'', jurisdiction:'ALL' },
     stages: [
       { key:'embed',  label:'Analyzing your specification',           status:'pending' },
@@ -179,7 +175,7 @@ function designSuggestionsPage(){
         if (savedForm) this.form = { ...this.form, ...JSON.parse(savedForm) };
       } catch(e) {}
     },
-    pipelineOpen() { return this.loading || !!this.errorMsg; },
+    pipelineOpen() { return this.loading || this.pipelineDone || !!this.errorMsg; },
     reset(){
       this.result=null; this.errorMsg=''; this.isQuotaError=false;
       this.form.specs=''; this.form.product_id='';
@@ -211,6 +207,8 @@ function designSuggestionsPage(){
             sessionStorage.setItem('design_suggestions_last_form', JSON.stringify(this.form));
           } catch(e) {}
           this.loading = false;
+          this.pipelineDone = true;
+          setTimeout(() => { this.pipelineDone = false; }, 1300);
         },
         onError: (msg) => {
           this.stages.forEach(s => { if (s.status === 'active') s.status = 'error'; });

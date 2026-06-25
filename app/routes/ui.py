@@ -4,10 +4,11 @@ app/routes/ui.py — Server-side rendered page routes (Jinja2 templates).
 Routes:
   GET /                   → redirects to /upload
   GET /upload             → patent upload form
-  GET /summaries          → browsable list of all patents
+  GET /patent-library     → browsable list of all patents
   GET /risk               → Phase 2 — IP risk analysis
   GET /design-suggestions → Phase 3 — design suggestions built on risk output
-  GET /innovation         → Phase 4 — innovation opportunities or improvement ideas for gaps or common patterns 
+  GET /innovation         → Phase 4 — innovation opportunities or improvement ideas for gaps or common patterns
+  GET /summaries          → list of generated Management Summary PDFs
 """
 import asyncio
 import logging
@@ -44,8 +45,8 @@ async def page_upload(request: Request):
     return templates.TemplateResponse(request=request, name="upload.html", context={"recent": recent})
 
 
-@router.get("/summaries", include_in_schema=False)
-async def page_summaries(request: Request):
+@router.get("/patent-library", include_in_schema=False)
+async def page_patent_library(request: Request):
     try:
         patents = await asyncio.to_thread(
             lambda: (
@@ -56,7 +57,7 @@ async def page_summaries(request: Request):
         )
     except Exception:
         patents = []
-    return templates.TemplateResponse(request=request, name="summaries.html", context={"patents": patents})
+    return templates.TemplateResponse(request=request, name="patent-library.html", context={"patents": patents})
 
 
 @router.get("/risk", include_in_schema=False)
@@ -117,3 +118,9 @@ async def page_innovation(request: Request):
         request=request, name="innovation.html",
         context={"jurisdictions": jurisdictions}
     )
+
+
+@router.get("/summaries", include_in_schema=False)
+async def page_summaries(request: Request):
+    """List of generated Management Summary PDFs."""
+    return templates.TemplateResponse(request=request, name="summaries.html")

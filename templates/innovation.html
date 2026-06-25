@@ -134,6 +134,32 @@
       </div>
     </div>
 
+    <!-- Management Summary banner — condenses this run together with any linked
+         Risk Analysis / Design Improvements results (read from sessionStorage,
+         same handoff pattern as the other two banners) into one PDF page for
+         management review. Always shown once there's a result; a missing
+         upstream result just becomes a "not on file" note in that PDF section
+         rather than blocking generation. -->
+    <div x-show="result" x-transition
+         class="card p-5 flex items-center gap-4" style="border-radius:16px;border-color:rgba(0,96,169,0.2);background:rgba(0,96,169,0.04)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="flex-shrink:0">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="#0060a9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M14 2v6h6" stroke="#0060a9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M9 13h6M9 17h6" stroke="#0060a9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <p class="text-sm font-semibold text-white">Ready to brief management?</p>
+        <p class="text-xs mt-0.5" style="color:var(--text3)">Generate a one-page PDF with the original idea, the top risk, the best design fix, and the highest-opportunity innovations.</p>
+      </div>
+      <button class="btn btn-secondary ml-auto" style="font-size:12px;padding:8px 20px;white-space:nowrap;min-width:190px"
+              @click="generateManagementSummary()" :disabled="generatingSummary">
+        <span x-show="!generatingSummary">Generate Management Summary →</span>
+        <span x-show="generatingSummary" class="flex items-center justify-center gap-2">
+          <div class="spinner" style="width:12px;height:12px"></div>Generating…
+        </span>
+      </button>
+    </div>
+
     <!-- Three-column layout: Clusters | Gaps | Innovation Vectors -->
     <div class="grid gap-4" style="grid-template-columns:1fr 1fr 1.2fr">
 
@@ -311,9 +337,9 @@
       <p class="text-xs max-w-xs text-center leading-relaxed" style="color:var(--text3)">Select a technology domain, optionally add a focus prompt, and click <strong style="color:var(--text2)">Discover Innovation Opportunities</strong> to begin.</p>
     </div>
     <div class="flex items-center gap-3 mt-1">
-      <a href="/summaries" class="qlink">
+      <a href="/patent-library" class="qlink">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-        View Summaries
+        View Patent Library
       </a>
       <a href="/risk" class="qlink">⚠ Risk Analysis</a>
       <a href="/design-suggestions" class="qlink">✦ Design Improvements</a>
@@ -368,6 +394,7 @@ function innovationPage() {
     saved_id: null,
     saving: false,
     savedList: [],
+    generatingSummary: false,
     form: {
       domain: '',
       scope: 'full',
@@ -410,6 +437,44 @@ function innovationPage() {
       this.loadSavedList();
     },
     pipelineOpen() { return this.loading || this.pipelineDone || !!this.errorMsg; },
+    async generateManagementSummary() {
+      if (!this.result || this.generatingSummary) return;
+      this.generatingSummary = true;
+      try {
+        // Pull whatever upstream results are sitting in sessionStorage from the
+        // Risk Analysis / Design Improvements pages — same handoff data those
+        // pages' banners already write, just read here instead of pre-filling a
+        // form. Either or both may be absent; the backend handles that.
+        let riskForm = null, riskResult = null, designForm = null, designResult = null;
+        try { riskForm     = JSON.parse(sessionStorage.getItem('risk_last_form'));               } catch(e) {}
+        try { riskResult   = JSON.parse(sessionStorage.getItem('risk_last_result'));              } catch(e) {}
+        try { designForm   = JSON.parse(sessionStorage.getItem('design_suggestions_last_form'));  } catch(e) {}
+        try { designResult = JSON.parse(sessionStorage.getItem('design_suggestions_last_result')); } catch(e) {}
+
+        const resp = await fetch('/api/v1/management-summaries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            product_id:        riskForm?.product_id || designForm?.product_id || '',
+            component_scope:   riskForm?.component_scope || designForm?.component_scope || '',
+            domain:             this.form.domain || '',
+            risk_result:        riskResult,
+            design_result:      designResult,
+            innovation_result:  this.result,
+          }),
+        });
+        if (!resp.ok) {
+          const j = await resp.json().catch(() => ({}));
+          throw new Error(j.detail || 'Summary generation failed');
+        }
+        const saved = await resp.json();
+        window.location.href = `/api/v1/management-summaries/${saved.id}/pdf`;
+      } catch(e) {
+        this.errorMsg = e.message || 'Summary generation failed';
+      } finally {
+        this.generatingSummary = false;
+      }
+    },
     _updateStats() {
       if (!this.result) return;
       this.stats.cluster_count = this.result.clusters?.length ?? 0;

@@ -24,7 +24,7 @@ app/
   state.py          ← AppState dataclass (embed_model, supabase)
   models.py         ← All Pydantic request/response models
   routes/
-    ui.py           ← Page routes: / /upload /summaries /risk /design-suggestions /innovation
+    ui.py           ← Page routes: / /upload /patent-library /risk /design-suggestions /innovation /summaries
     api.py          ← API routes: /health /api/v1/...
   services/
     llm.py          ← OpenRouter client, retry, in-memory SHA-256 cache

@@ -12,7 +12,7 @@ Startup sequence (lifespan):
   4. Log the active OpenRouter model
 
 Routers registered:
-  app/routes/ui.py  — HTML page routes (/, /upload, /summaries, /compare, /playground)
+  app/routes/ui.py  — HTML page routes (/, /upload, /patent-library, /compare, /playground)
   app/routes/api.py — JSON API routes (/health, /api/v1/*)
 
 Run:

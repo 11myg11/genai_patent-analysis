@@ -23,6 +23,10 @@ Endpoints:
   GET    /api/v1/innovation/saved                → list all saved analyses (summaries only)
   GET    /api/v1/innovation/saved/{analysis_id}  → retrieve one full saved analysis
   DELETE /api/v1/innovation/saved/{analysis_id}  → delete a saved analysis
+  POST   /api/v1/management-summaries            → generate + save a one-page Management Summary PDF
+  GET    /api/v1/management-summaries            → list saved summaries (metadata only)
+  GET    /api/v1/management-summaries/{id}/pdf   → download one summary's PDF bytes
+  DELETE /api/v1/management-summaries/{id}       → delete a saved summary
 
 The four pipeline endpoints marked "(SSE stream)" respond with
 text/event-stream instead of one JSON body: a "step" event per real pipeline
@@ -51,8 +55,10 @@ from app.models import (
     InnovationRequest,
     InnovationResponse,
     InnovationSaveRequest,
+    ManagementSummaryRequest,
     SavedInnovationSummary,
     SavedInnovationDetail,
+    SavedManagementSummary,
     PatentRiskResult,
     RiskAnalysisRequest,
     RiskAnalysisResponse,
@@ -66,6 +72,13 @@ from app.services.innovation import (
     list_saved_analyses,
     get_saved_analysis,
     delete_saved_analysis,
+)
+from app.services.management_summary import (
+    build_summary_pdf,
+    save_summary,
+    list_summaries,
+    get_summary,
+    delete_summary,
 )
 from app.services.progress import stream_sse
 from app.services.retrieval import (
@@ -788,5 +801,89 @@ async def delete_innovation_analysis(analysis_id: str):
     """Delete a saved innovation analysis."""
     try:
         await asyncio.to_thread(delete_saved_analysis, analysis_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Management Summary — condenses Risk + Design + Innovation into one PDF page
+# ---------------------------------------------------------------------------
+
+@router.post("/api/v1/management-summaries", response_model=SavedManagementSummary)
+async def create_management_summary(request: ManagementSummaryRequest):
+    """
+    Build the one-page PDF from whatever Risk/Design/Innovation results the
+    caller has on hand (any may be None — see build_summary_pdf), save it, and
+    return its metadata. The frontend downloads the PDF via the /pdf route below
+    right after this call, using the returned id.
+    """
+    try:
+        pdf_bytes = await asyncio.to_thread(
+            build_summary_pdf,
+            request.product_id,
+            request.component_scope,
+            request.domain,
+            request.risk_result,
+            request.design_result,
+            request.innovation_result,
+        )
+        row = await asyncio.to_thread(save_summary, request.product_id, request.domain, pdf_bytes)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return SavedManagementSummary(
+        id=row["id"],
+        created_at=str(row["created_at"]),
+        product_id=row.get("product_id", ""),
+        domain=row.get("domain", ""),
+    )
+
+
+@router.get("/api/v1/management-summaries", response_model=list[SavedManagementSummary])
+async def list_management_summaries():
+    """List all saved Management Summaries, newest first."""
+    try:
+        rows = await asyncio.to_thread(list_summaries)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return [
+        SavedManagementSummary(
+            id=r["id"], created_at=str(r["created_at"]),
+            product_id=r.get("product_id", ""), domain=r.get("domain", ""),
+        )
+        for r in rows
+    ]
+
+
+@router.get("/api/v1/management-summaries/{summary_id}/pdf")
+async def download_management_summary(summary_id: str):
+    """Stream one summary's PDF bytes for download."""
+    try:
+        row = await asyncio.to_thread(get_summary, summary_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Summary not found.")
+
+    raw = row.get("pdf_data", "")
+    if isinstance(raw, str) and raw.startswith("\\x"):
+        pdf_bytes = bytes.fromhex(raw[2:])
+    elif isinstance(raw, (bytes, bytearray)):
+        pdf_bytes = bytes(raw)
+    else:
+        raise HTTPException(status_code=500, detail="Unexpected pdf_data format from database")
+
+    filename = f"management-summary-{(row.get('product_id') or summary_id)}.pdf".replace(" ", "_")
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.delete("/api/v1/management-summaries/{summary_id}", status_code=204)
+async def delete_management_summary(summary_id: str):
+    """Delete a saved Management Summary."""
+    try:
+        await asyncio.to_thread(delete_summary, summary_id)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

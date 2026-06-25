@@ -161,7 +161,7 @@
             <thead><tr><th>Patent</th><th>Assignee</th><th>JX</th></tr></thead>
             <tbody>
               <template x-for="p in recentPatents" :key="p.id">
-                <tr style="cursor:pointer" @click="window.location='/summaries'">
+                <tr style="cursor:pointer" @click="window.location='/patent-library'">
                   <td>
                     <div class="font-mono text-xs" style="color:#4d9ed4" x-text="p.patent_number"></div>
                     <div class="text-xs mt-0.5" style="color:var(--text2)" x-text="p.title.slice(0,35)+(p.title.length>35?'…':'')"></div>

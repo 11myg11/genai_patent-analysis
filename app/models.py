@@ -18,6 +18,13 @@ Phase 4 — Innovation Opportunities:
   InnovationVector     — an actionable direction for new IP, scored by feasibility + novelty
   TrendPoint           — {year, count} for the publication trend bar chart
 
+Management Summary:
+  ManagementSummaryRequest — input for POST /api/v1/management-summaries: the raw
+                             Risk/Design/Innovation result payloads (any may be
+                             omitted) plus product_id/domain for the cover section
+  SavedManagementSummary   — output: saved-record metadata (no PDF bytes — those
+                             are fetched separately via the /pdf download route)
+
 Other:
   CompareRequest        — input for POST /api/v1/compare
   ChunkReference        — a single matched patent chunk
@@ -188,3 +195,21 @@ class SavedInnovationDetail(BaseModel):
     patent_count: int
     patent_ids:   List[str]
     result:       Dict            # full InnovationResponse payload
+
+
+# ── Management Summary ────────────────────────────────────────────────────────
+
+class ManagementSummaryRequest(BaseModel):
+    product_id:        str               = ""
+    component_scope:   str               = ""
+    domain:            str               = ""
+    risk_result:       Optional[Dict]    = None  # raw RiskAnalysisResponse payload, if available
+    design_result:     Optional[Dict]    = None  # raw DesignSuggestionResponse payload, if available
+    innovation_result: Optional[Dict]    = None  # raw InnovationResponse payload, if available
+
+
+class SavedManagementSummary(BaseModel):
+    id:         str
+    created_at: str
+    product_id: str
+    domain:     str

@@ -123,7 +123,7 @@ def _pick_top_gaps(innovation_result: Optional[Dict[str, Any]], limit: int = 3) 
     return [g for g in gaps if g.get("opportunity_level") == "HIGH"][:limit]
 
 
-def _first_sentence(text: str, max_chars: int = 130) -> str:
+def _first_sentence(text: str, max_chars: int = 105) -> str:
     """Returns the first sentence of `text` (up to and including its period).
     If that sentence doesn't fit within `max_chars`, cuts at the last comma
     within budget instead of an arbitrary word — descriptions here are
@@ -131,7 +131,9 @@ def _first_sentence(text: str, max_chars: int = 130) -> str:
     instead of Y, avoiding Z entirely."), so cutting at the comma keeps the
     complete main clause rather than landing mid-clause on a dangling word
     like "claimed" or "the". Only falls back to a plain word-boundary cut if
-    no comma is found either. Always ends on a real period — never "..."."""
+    no comma is found either. Always ends on a real period — never "...".
+    max_chars=105 keeps the full headline (this plus its fixed prefix) inside
+    3 lines at the headline's fontsize — see build_summary_pdf."""
     text = text.strip()
     cut = text.find(". ")
     sentence = text[: cut + 1] if cut != -1 else text
@@ -183,31 +185,44 @@ def build_summary_pdf(
     # Header — the actual one-sentence management summary as the big bold
     # headline (this is the point of the whole page), with "Fuyao Patent OS"
     # demoted to a small grey meta line underneath alongside product/domain/
-    # date. Box heights are deliberately generous, not tightly fitted — see
-    # _SECTION_TITLE_H above for why a too-short box draws nothing at all
-    # rather than just clipping. The headline box is sized for up to ~3 lines
-    # since, unlike the old static title, its length varies with the data.
+    # date. The headline's height is computed from its actual wrapped line
+    # count (via _wrapped_line_count) rather than a fixed guess — a fixed
+    # height previously went silently blank in production whenever the real
+    # data produced a longer headline than the test cases it was sized for
+    # (insert_textbox draws nothing at all if the box is even slightly too
+    # short — see _SECTION_TITLE_H above). _first_sentence's max_chars=105
+    # keeps the headline at 3 lines in the overwhelming majority of cases,
+    # but this still degrades gracefully (grows the box) rather than going
+    # blank if some edge case ever produces a 4th line.
+    headline_w = _PAGE_W - 2 * _MARGIN
     headline = _build_headline(top_risk, best_design)
+    headline_lines = _wrapped_line_count(headline, 17, headline_w, fontname="hebo")
+    headline_h = headline_lines * 17 * 1.3 + 8
     page.insert_textbox(
-        fitz.Rect(_MARGIN, _MARGIN, _PAGE_W - _MARGIN, _MARGIN + 80),
+        fitz.Rect(_MARGIN, _MARGIN, _PAGE_W - _MARGIN, _MARGIN + headline_h),
         headline, fontsize=17, fontname="hebo", color=_TEXT, lineheight=1.3,
     )
+
     # product_id/domain are free-text form fields with no length cap upstream,
-    # so they're capped here too — long values get a 2-line allowance below
-    # (meta box height 38), but nothing should be able to grow this past that.
+    # so they're capped here too — long values get a 2-line allowance below,
+    # but nothing should be able to grow this past that.
     meta = f"Fuyao Patent OS · {(product_id or 'Unnamed product').strip()[:40]}"
     if domain:
         meta += f" · {domain.strip()[:40]}"
     meta += " · " + datetime.date.today().strftime("%d %b %Y")
+    meta_y = _MARGIN + headline_h + 4
+    meta_lines = _wrapped_line_count(meta, 11, headline_w)
+    meta_h = meta_lines * 11 * 1.3 + 6
     page.insert_textbox(
-        fitz.Rect(_MARGIN, _MARGIN + 84, _PAGE_W - _MARGIN, _MARGIN + 122),
+        fitz.Rect(_MARGIN, meta_y, _PAGE_W - _MARGIN, meta_y + meta_h),
         meta, fontsize=11, fontname="helv", color=_TEXT3, lineheight=1.3,
     )
+    divider_y = meta_y + meta_h + 10
     page.draw_line(
-        (_MARGIN, _MARGIN + 132), (_PAGE_W - _MARGIN, _MARGIN + 132), color=_ACCENT, width=1.4,
+        (_MARGIN, divider_y), (_PAGE_W - _MARGIN, divider_y), color=_ACCENT, width=1.4,
     )
 
-    y = _MARGIN + 146
+    y = divider_y + 14
 
     # 1 — Original idea
     idea_body = component_scope.strip() if component_scope.strip() else "No design specification on file."

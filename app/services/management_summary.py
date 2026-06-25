@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional
 
 import fitz
 
+from app.services.retrieval import _score_to_label
 from app.state import state
 
 log = logging.getLogger(__name__)
@@ -42,27 +43,60 @@ _PAGE_W, _PAGE_H = fitz.paper_size("a4")
 _MARGIN = 40
 
 
-_SECTION_TITLE_H = 17  # min. ~16 needed for a single fontsize-9 line — insert_textbox
+_SECTION_TITLE_H = 20  # min. ~19 needed for a single fontsize-10.5 line — insert_textbox
                         # draws nothing at all (not even a clipped line) if the box is
                         # even slightly too short for one full line, so these heights
                         # are deliberately generous rather than tightly fitted.
+_BODY_FONTSIZE = 11
+_BODY_LINEHEIGHT = 1.4
 
 
-def _section(page: fitz.Page, y: float, title: str, body: str, height: float) -> float:
-    """Draws one section (accent-coloured heading + body text clipped to `height`)
-    and returns the y-coordinate immediately below it, for the next section."""
+def _wrapped_line_count(text: str, fontsize: float, width: float, fontname: str = "helv") -> int:
+    """Estimates how many lines `text` will wrap into inside `width` points,
+    mirroring insert_textbox's own greedy word-wrap (measured via
+    fitz.get_text_length) since PyMuPDF doesn't expose the wrapped line count
+    directly. Used to size each section's body box to its actual content
+    instead of a fixed worst-case height — the latter left a large, varying
+    gap before the next heading whenever the real text was shorter."""
+    total = 0
+    for paragraph in text.split("\n"):
+        if not paragraph:
+            total += 1
+            continue
+        line = ""
+        for word in paragraph.split(" "):
+            trial = f"{line} {word}".strip()
+            if fitz.get_text_length(trial, fontname=fontname, fontsize=fontsize) <= width:
+                line = trial
+            else:
+                total += 1
+                line = word
+        total += 1
+    return max(total, 1)
+
+
+def _section(page: fitz.Page, y: float, title: str, body: str) -> float:
+    """Draws one section (accent-coloured heading + body text sized to fit
+    `body` exactly) and returns the y-coordinate immediately below it, for
+    the next section."""
     page.insert_textbox(
         fitz.Rect(_MARGIN, y, _PAGE_W - _MARGIN, y + _SECTION_TITLE_H),
-        title.upper(), fontsize=9, fontname="helv", color=_ACCENT,
+        title.upper(), fontsize=10.5, fontname="helv", color=_ACCENT,
     )
     page.draw_line(
         (_MARGIN, y + _SECTION_TITLE_H + 1), (_PAGE_W - _MARGIN, y + _SECTION_TITLE_H + 1),
         color=_BORDER, width=0.6,
     )
     body_y = y + _SECTION_TITLE_H + 6
+    width = _PAGE_W - 2 * _MARGIN
+    n_lines = _wrapped_line_count(body, _BODY_FONTSIZE, width)
+    # +6 buffer: empirically the smallest margin that still clears
+    # insert_textbox's silent "box too short -> draws nothing" failure
+    # across 1-6 line bodies (see module docstring / _SECTION_TITLE_H above).
+    height = n_lines * _BODY_FONTSIZE * _BODY_LINEHEIGHT + 6
     page.insert_textbox(
         fitz.Rect(_MARGIN, body_y, _PAGE_W - _MARGIN, body_y + height),
-        body, fontsize=9.5, fontname="helv", color=_TEXT, lineheight=1.4,
+        body, fontsize=_BODY_FONTSIZE, fontname="helv", color=_TEXT, lineheight=_BODY_LINEHEIGHT,
     )
     return body_y + height + 14
 
@@ -89,6 +123,49 @@ def _pick_top_gaps(innovation_result: Optional[Dict[str, Any]], limit: int = 3) 
     return [g for g in gaps if g.get("opportunity_level") == "HIGH"][:limit]
 
 
+def _first_sentence(text: str, max_chars: int = 130) -> str:
+    """Returns the first sentence of `text` (up to and including its period).
+    If that sentence doesn't fit within `max_chars`, cuts at the last comma
+    within budget instead of an arbitrary word — descriptions here are
+    typically "<main clause>, <trailing participial clause>." (e.g. "Use X
+    instead of Y, avoiding Z entirely."), so cutting at the comma keeps the
+    complete main clause rather than landing mid-clause on a dangling word
+    like "claimed" or "the". Only falls back to a plain word-boundary cut if
+    no comma is found either. Always ends on a real period — never "..."."""
+    text = text.strip()
+    cut = text.find(". ")
+    sentence = text[: cut + 1] if cut != -1 else text
+    if len(sentence) <= max_chars:
+        return sentence
+
+    window = sentence[:max_chars]
+    comma = window.rfind(",")
+    if comma > max_chars * 0.4:
+        return window[:comma].rstrip() + "."
+    return window.rsplit(" ", 1)[0].rstrip(",;:. ") + "."
+
+
+def _build_headline(
+    top_risk:    Optional[Dict[str, Any]],
+    best_design: Optional[Dict[str, Any]],
+) -> str:
+    """
+    Plain-language, at-a-glance summary of the whole page for the big bold
+    headline — deliberately free of patent numbers/product codes (not useful
+    to a non-technical reader at a glance) and always ends on a real sentence
+    so nothing reads as cut off.
+    """
+    if not top_risk:
+        return "No significant patent risk was identified for this design."
+
+    risk_label = _score_to_label(top_risk.get("risk_score", 0))
+    if not best_design:
+        return f"This design carries {risk_label} patent risk, with no validated design-around on file yet."
+
+    fix = _first_sentence((best_design.get("description") or "").strip())
+    return f"This design carries {risk_label} patent risk. Recommended fix: {fix}"
+
+
 def build_summary_pdf(
     product_id:        str,
     component_scope:   str,
@@ -100,40 +177,53 @@ def build_summary_pdf(
     doc = fitz.open()
     page = doc.new_page(width=_PAGE_W, height=_PAGE_H)
 
-    # Header
+    top_risk    = _pick_top_risk(risk_result)
+    best_design = _pick_best_design(design_result)
+
+    # Header — the actual one-sentence management summary as the big bold
+    # headline (this is the point of the whole page), with "Fuyao Patent OS"
+    # demoted to a small grey meta line underneath alongside product/domain/
+    # date. Box heights are deliberately generous, not tightly fitted — see
+    # _SECTION_TITLE_H above for why a too-short box draws nothing at all
+    # rather than just clipping. The headline box is sized for up to ~3 lines
+    # since, unlike the old static title, its length varies with the data.
+    headline = _build_headline(top_risk, best_design)
     page.insert_textbox(
-        fitz.Rect(_MARGIN, _MARGIN, _PAGE_W - _MARGIN, _MARGIN + 32),
-        "Management Summary", fontsize=18, fontname="hebo", color=_TEXT,
+        fitz.Rect(_MARGIN, _MARGIN, _PAGE_W - _MARGIN, _MARGIN + 80),
+        headline, fontsize=17, fontname="hebo", color=_TEXT, lineheight=1.3,
     )
-    meta = f"{product_id or 'Unnamed product'}" + (f"  ·  {domain}" if domain else "")
-    meta += "  ·  " + datetime.date.today().strftime("%d %b %Y")
+    # product_id/domain are free-text form fields with no length cap upstream,
+    # so they're capped here too — long values get a 2-line allowance below
+    # (meta box height 38), but nothing should be able to grow this past that.
+    meta = f"Fuyao Patent OS · {(product_id or 'Unnamed product').strip()[:40]}"
+    if domain:
+        meta += f" · {domain.strip()[:40]}"
+    meta += " · " + datetime.date.today().strftime("%d %b %Y")
     page.insert_textbox(
-        fitz.Rect(_MARGIN, _MARGIN + 34, _PAGE_W - _MARGIN, _MARGIN + 50),
-        meta, fontsize=9.5, fontname="helv", color=_TEXT3,
+        fitz.Rect(_MARGIN, _MARGIN + 84, _PAGE_W - _MARGIN, _MARGIN + 122),
+        meta, fontsize=11, fontname="helv", color=_TEXT3, lineheight=1.3,
     )
     page.draw_line(
-        (_MARGIN, _MARGIN + 56), (_PAGE_W - _MARGIN, _MARGIN + 56), color=_ACCENT, width=1.4,
+        (_MARGIN, _MARGIN + 132), (_PAGE_W - _MARGIN, _MARGIN + 132), color=_ACCENT, width=1.4,
     )
 
-    y = _MARGIN + 70
+    y = _MARGIN + 146
 
     # 1 — Original idea
     idea_body = component_scope.strip() if component_scope.strip() else "No design specification on file."
-    y = _section(page, y, "Original Idea", idea_body[:420], height=44)
+    y = _section(page, y, "Original Idea", idea_body[:420])
 
     # 2 — Highest risk
-    top_risk = _pick_top_risk(risk_result)
     if top_risk:
         risk_body = (
-            f"{top_risk.get('patent_number', '?')}  ·  risk score {top_risk.get('risk_score', 0)}/100\n"
+            f"{top_risk.get('patent_number', '?')} · risk score {top_risk.get('risk_score', 0)}/100\n"
             f"{(top_risk.get('overlap_explanation') or '').strip()[:380]}"
         )
     else:
         risk_body = "No risk analysis on file."
-    y = _section(page, y, "Highest Risk Identified", risk_body, height=58)
+    y = _section(page, y, "Highest Risk Identified", risk_body)
 
     # 3 — Best design improvement
-    best_design = _pick_best_design(design_result)
     if best_design:
         design_body = (
             f"Risk after revision: {best_design.get('risk_score', '?')}\n"
@@ -141,20 +231,22 @@ def build_summary_pdf(
         )
     else:
         design_body = "No design improvement on file."
-    y = _section(page, y, "Recommended Design Improvement", design_body, height=58)
+    y = _section(page, y, "Recommended Design Improvement", design_body)
 
     # 4 — Innovation opportunities
     top_gaps = _pick_top_gaps(innovation_result)
     if top_gaps:
         # "helv" (base-14 Helvetica) has no glyph for U+2022 (•) — renders as a
-        # missing-glyph box/"?" instead. A plain hyphen avoids that entirely.
+        # missing-glyph box/"?" instead. A plain hyphen-bullet avoids that; the
+        # area/description separator is a colon rather than a second hyphen so
+        # the line doesn't read as "- X - Y".
         gaps_body = "\n".join(
-            f"- {g.get('area', '?')} - {(g.get('description') or '').strip()[:160]}"
+            f"- {g.get('area', '?')}: {(g.get('description') or '').strip()[:160]}"
             for g in top_gaps
         )
     else:
         gaps_body = "No high-opportunity innovation gaps on file."
-    _section(page, y, "Innovation Opportunities (High Priority)", gaps_body, height=70)
+    _section(page, y, "Innovation Opportunities", gaps_body)
 
     return doc.tobytes()
 

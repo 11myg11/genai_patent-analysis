@@ -87,6 +87,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Patent Analysis Platform", version="1.0.0", lifespan=lifespan)
 
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 from app.routes import api, ui  # noqa: E402
 app.include_router(ui.router)
 app.include_router(api.router)

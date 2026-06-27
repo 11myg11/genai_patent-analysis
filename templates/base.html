@@ -120,22 +120,21 @@
       pointer-events: none;
     }
     .brand {
-      padding: 28px 20px 24px;
-      border-bottom: 1px solid rgba(255,255,255,0.12);
-    }
-    .brand-logo-placeholder {
-      width: 100%; height: 40px; border-radius: 8px;
-      background: rgba(255,255,255,0.08);
-      border: 1px dashed rgba(255,255,255,0.3);
-      display: flex; align-items: center; justify-content: center;
-      margin-bottom: 12px;
-      font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
-      text-transform: uppercase; color: rgba(255,255,255,0.4);
+      padding: 20px 20px 18px;
+      background: #ffffff;
+      border-bottom: 1px solid rgba(0,0,0,0.10);
+      flex-shrink: 0;
     }
     .brand-name {
       font-family: 'Syne', sans-serif;
-      font-size: 17px; font-weight: 800;
-      color: #fff; letter-spacing: -0.01em;
+      font-size: 15px; font-weight: 800;
+      color: #0f172a; letter-spacing: -0.01em;
+      margin-top: 10px;
+    }
+    .brand-sub {
+      font-size: 10px; font-weight: 500;
+      color: #64748b; letter-spacing: 0.10em;
+      text-transform: uppercase; margin-top: 2px;
     }
     /* ── Nav ── */
     .nav-section {
@@ -402,10 +401,9 @@
   <aside class="sidebar">
     <!-- Brand -->
     <div class="brand">
-      <!-- Placeholder for the Fuyao company logo — no brand approval yet, so this
-           is a generic "Logo" frame rather than any reproduction of the real mark. -->
-      <div class="brand-logo-placeholder">Logo</div>
+      <img src="/static/Fuyao_logo.svg" alt="" style="width:100%;max-width:150px;height:auto;display:block">
       <div class="brand-name">PatentOS</div>
+      <div class="brand-sub">IP Intelligence Platform</div>
     </div>
 
     <!-- Navigation -->

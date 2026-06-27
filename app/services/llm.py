@@ -88,10 +88,10 @@ def llm_text(prompt: str, max_tokens: int = LLM_MAX_TOKENS) -> str:
     raise HTTPException(status_code=429, detail="LLM rate limit exceeded after retry.")
 
 
-def llm_json(prompt: str) -> Dict[str, Any]:
+def llm_json(prompt: str, max_tokens: int = LLM_MAX_TOKENS) -> Dict[str, Any]:
     raw = ""
     try:
-        raw = llm_text(prompt)
+        raw = llm_text(prompt, max_tokens=max_tokens)
         raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         return json.loads(raw)
     except json.JSONDecodeError as exc:

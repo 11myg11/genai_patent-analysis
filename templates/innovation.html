@@ -294,34 +294,6 @@
 
     </div><!-- end 3-col grid -->
 
-    <!-- Trend timeline -->
-    <div class="card flex flex-col overflow-hidden" style="border-radius:16px">
-      <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border)">
-        <div>
-          <p class="label">Publication Trend</p>
-          <p class="text-xs mt-0.5" style="color:var(--text3)">Patent filings over time in this domain</p>
-        </div>
-        <span class="badge badge-info font-mono" x-show="result?.trend_data?.length" x-text="result?.trend_data?.length + ' years'"></span>
-      </div>
-      <div class="px-5 py-4">
-        <!-- Bar chart rendered inline via SVG -->
-        <template x-if="result?.trend_data?.length">
-          <div style="height:80px;display:flex;align-items:flex-end;gap:4px">
-            <template x-for="(bar, i) in result.trend_data" :key="i">
-              <div class="flex flex-col items-center gap-1" style="flex:1">
-                <div class="w-full rounded-t transition-all duration-700"
-                  style="background:linear-gradient(to top,rgba(0,96,169,0.6),rgba(0,153,187,0.4));min-height:4px"
-                  :style="`height:${Math.max(4, (bar.count / Math.max(...result.trend_data.map(d=>d.count))) * 64)}px`"></div>
-                <span class="font-mono text-xs" style="color:var(--text3)" x-text="String(bar.year).slice(2)"></span>
-              </div>
-            </template>
-          </div>
-        </template>
-        <div x-show="!result?.trend_data?.length" class="flex items-center justify-center py-6">
-          <p class="text-xs" style="color:var(--text3)">No trend data available</p>
-        </div>
-      </div>
-    </div>
 
   </div><!-- end results -->
 

@@ -216,7 +216,7 @@ def call_agent_analyst(
         + f"PATENT CORPUS:\n{corpus_block}"
     )
 
-    result = llm_json(prompt)
+    result = llm_json(prompt, max_tokens=4096)
     result.setdefault("clusters", [])
     result.setdefault("gaps", [])
 
@@ -276,7 +276,7 @@ def call_agent_innovator(
         + f"TECHNOLOGY CLUSTERS:\n{clusters_block}\n\nIDENTIFIED GAPS:\n{gaps_block}"
     )
 
-    result     = llm_json(prompt)
+    result     = llm_json(prompt, max_tokens=4096)
     innovations = result.get("innovations", [])
 
     log.info("Step 4 — innovator: %d innovation vectors generated", len(innovations))

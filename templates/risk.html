@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Risk Analysis{% endblock %}
+{% block page_title %}Risk Analysis{% endblock %}
 {% block content %}
 <div class="p-7 flex flex-col gap-5" x-data="riskPage()" x-init="init()">
 
   <!-- Page header -->
   <div class="flex items-start justify-between">
     <div>
-      <h1 class="font-display text-2xl font-bold text-white tracking-tight">IP Risk Analysis</h1>
       <p class="mt-1 text-sm" style="color:var(--text2)">
         Submit your product design specification to identify patent infringement risks across the corpus.
       </p>

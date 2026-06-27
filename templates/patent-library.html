@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Patent Library{% endblock %}
+{% block page_title %}Patent Library{% endblock %}
 {% block content %}
 <style>
   .patent-item { position:relative; }
@@ -118,8 +119,10 @@
   <!-- Sidebar -->
   <div class="flex flex-col" style="width:280px;flex-shrink:0;border-right:1px solid var(--border);height:100%">
     <div class="p-4" style="border-bottom:1px solid var(--border)">
-      <p class="label mb-3">Patent Library <span class="badge badge-info" style="margin-left:6px;font-size:10px" x-text="filtered.length"></span></p>
-      <input type="text" x-model="search" @input="filterPatents()" placeholder="Search patents…" class="w-full px-3 py-2 text-sm mb-2"/>
+      <div class="flex items-center gap-2 mb-2">
+        <input type="text" x-model="search" @input="filterPatents()" placeholder="Search patents…" class="w-full px-3 py-2 text-sm" style="flex:1"/>
+        <span class="badge badge-neutral font-mono" style="font-size:10px;flex-shrink:0" x-text="filtered.length"></span>
+      </div>
       <select x-model="filterJX" @change="filterPatents()" class="w-full px-3 py-2 text-sm">
         <option value="">All Jurisdictions</option>
         <option>US</option><option>EP</option><option>CN</option>
@@ -137,11 +140,6 @@
             <div class="flex items-center gap-2 mb-1" style="padding-right:54px">
               <span class="font-mono text-xs font-semibold" style="color:#4d9ed4" x-text="p.patent_number"></span>
               <span class="badge badge-neutral" style="font-size:9px" x-text="p.jurisdiction"></span>
-              <span x-show="innovationCounts[p.id]"
-                    class="font-mono px-1.5 py-0.5 rounded"
-                    style="font-size:9px;font-weight:600;background:rgba(0,135,90,0.12);border:1px solid rgba(0,135,90,0.25);color:#00875a"
-                    x-text="'★ ' + innovationCounts[p.id]"
-                    title="Referenced in saved innovation analyses"></span>
             </div>
             <p class="text-xs leading-snug" style="color:var(--text);padding-right:54px" x-text="p.title.slice(0,55)+(p.title.length>55?'…':'')"></p>
             <p class="text-xs mt-1" style="color:var(--text3)" x-text="p.assignee||'Unknown assignee'"></p>

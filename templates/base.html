@@ -102,7 +102,35 @@
     ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.14); border-radius: 2px; }
     ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.22); }
     /* ── Layout ── */
-    .app-shell { display: flex; height: 100vh; position: relative; z-index: 1; }
+    .app-shell { display: flex; flex-direction: column; height: 100vh; position: relative; z-index: 1; }
+    /* ── Top header bar ── */
+    .app-header {
+      height: 56px; flex-shrink: 0;
+      background: #ffffff;
+      border-bottom: 1px solid rgba(0,0,0,0.09);
+      display: flex; align-items: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      position: relative; z-index: 2;
+    }
+    .header-logo {
+      width: 220px; flex-shrink: 0;
+      padding: 0 20px;
+      display: flex; align-items: center;
+      height: 100%;
+      border-right: 1px solid rgba(0,0,0,0.08);
+    }
+    .header-title {
+      flex: 1; padding: 0 28px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .header-title h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 17px; font-weight: 700;
+      color: #0f172a; letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+    /* ── Body (sidebar + content) ── */
+    .app-body { flex: 1; display: flex; min-height: 0; }
     /* ── Sidebar — Fuyao corporate blue ── */
     .sidebar {
       width: 220px; flex-shrink: 0;
@@ -119,26 +147,9 @@
       background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.12) 30%, rgba(255,255,255,0.08) 70%, transparent);
       pointer-events: none;
     }
-    .brand {
-      padding: 20px 20px 18px;
-      background: #ffffff;
-      border-bottom: 1px solid rgba(0,0,0,0.10);
-      flex-shrink: 0;
-    }
-    .brand-name {
-      font-family: 'Syne', sans-serif;
-      font-size: 15px; font-weight: 800;
-      color: #0f172a; letter-spacing: -0.01em;
-      margin-top: 10px;
-    }
-    .brand-sub {
-      font-size: 10px; font-weight: 500;
-      color: #64748b; letter-spacing: 0.10em;
-      text-transform: uppercase; margin-top: 2px;
-    }
     /* ── Nav ── */
     .nav-section {
-      padding: 20px 12px 8px;
+      padding: 16px 12px 8px;
       flex: 1; overflow-y: auto;
     }
     .nav-label {
@@ -397,14 +408,21 @@
 <body>
 <div class="app-shell">
 
+  <!-- ═══ TOP HEADER ══════════════════════════════════════════════ -->
+  <header class="app-header">
+    <div class="header-logo">
+      <img src="/static/Fuyao_logo.svg" alt="" style="max-height:28px;width:auto;display:block;flex-shrink:0">
+      <span style="font-family:'Syne',sans-serif;font-size:15px;font-weight:800;color:#0f172a;letter-spacing:-0.01em;margin-left:10px;white-space:nowrap">PatentOS</span>
+    </div>
+    <div class="header-title">
+      <h1>{% block page_title %}PatentOS{% endblock %}</h1>
+    </div>
+  </header>
+
+  <div class="app-body">
+
   <!-- ═══ SIDEBAR ═══════════════════════════════════════════════ -->
   <aside class="sidebar">
-    <!-- Brand -->
-    <div class="brand">
-      <img src="/static/Fuyao_logo.svg" alt="" style="width:100%;max-width:150px;height:auto;display:block">
-      <div class="brand-name">PatentOS</div>
-      <div class="brand-sub">IP Intelligence Platform</div>
-    </div>
 
     <!-- Navigation -->
     <nav class="nav-section">
@@ -498,7 +516,8 @@
     </div>
   </div>
 
-</div>
+  </div><!-- end app-body -->
+</div><!-- end app-shell -->
 
 <!--
   Download Center tracking — captures any click on an <a> whose href ends in

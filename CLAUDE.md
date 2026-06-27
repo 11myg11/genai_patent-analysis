@@ -10,7 +10,7 @@ Four phases per assignment:
 1. Patent ingestion + structured storage ✅
 2. Risk identification (design vs. patent claims) ✅
 3. Design-around suggestions (with manufacturing audit) ✅
-4. Innovation gap analysis across patent portfolios ← **in progress**
+4. Innovation gap analysis across patent portfolios ✅
 
 ---
 
@@ -48,98 +48,44 @@ uploads/            ← Temp uploads, gitignored
 
 ---
 
-## Phase 4 — Innovation Opportunities
+## Phase 4 — Innovation Opportunities ✅
 
 ### Goal
 Analyse the full patent corpus to surface technology clusters, whitespace gaps, and actionable
-innovation directions. The assignment says: "Review multiple patents to identify common patterns
-and gaps. Suggest potential directions for new ideas or improvements."
+innovation directions. Assignment: "Review multiple patents to identify common patterns and gaps.
+Suggest potential directions for new ideas or improvements."
 
-### What already exists
-- `GET /innovation` page route → renders `templates/innovation.html`
-- `innovation.html` — complete Alpine.js UI consuming `POST /api/v1/innovation`
-  - Three-column results: Technology Clusters | Patent Gaps | Innovation Vectors
-  - Publication trend bar chart
-  - Form: domain, scope (full/claims/description), jurisdiction filter, optional focus prompt
+### What was built
+- `app/services/innovation.py` — full pipeline service (corpus fetch, trend aggregation, analyst agent, innovator agent)
+- Models in `app/models.py` — `InnovationRequest`, `InnovationResponse`, `TechnologyCluster`, `PatentGap`, `InnovationVector`, `TrendPoint`, `InnovationSaveRequest`, `SavedInnovationSummary`, `SavedInnovationDetail`
+- `POST /api/v1/innovation` — streams SSE pipeline progress (steps: corpus, trends, analyst, innovator)
+- `POST /api/v1/innovation/save` — persist a completed analysis to `innovation_analyses` table
+- `GET /api/v1/innovation/saved` — list all saved analyses (summaries only, no heavy JSONB)
+- `GET /api/v1/innovation/saved/{id}` — retrieve one full saved analysis
+- `DELETE /api/v1/innovation/saved/{id}` — delete a saved analysis
+- `GET /innovation` page route → `templates/innovation.html` (Alpine.js UI)
+  - Stats bar: Patents Analysed / Technology Clusters / Gap Areas / Innovation Vectors
+  - Three-column results panel: Technology Clusters | Patent Gaps | Innovation Vectors
+  - Publication trend bar chart (inline SVG)
+  - Save / Load / Delete saved analyses panel
+  - Last result and form restored from sessionStorage on page load
 
-### What needs to be built
-1. **`app/services/innovation.py`** — pipeline service
-2. **New models** in `app/models.py` — InnovationRequest, InnovationResponse, TechnologyCluster, PatentGap, InnovationVector, TrendPoint
-3. **`POST /api/v1/innovation`** endpoint in `app/routes/api.py`
+### Pipeline (4 steps)
 
-### Pipeline design (5 steps)
+**Step 1 — `fetch_corpus_overview`** — embed domain (if provided), hybrid-search to rank up to
+`MAX_CORPUS_PATENTS = 30` patents by relevance (falls back to most-recent order). Fetches
+representative chunks per patent: `MAX_CHUNKS_PER_PATENT = 2`, `MAX_CLAIM_CHARS = 400`.
+Scope parameter controls section types: `"full"` / `"claims"` / `"description"`.
 
-**Step 1 — Corpus preparation** (`fetch_corpus_overview`)
-- Query `patent_documents` filtered by jurisdiction
-- If a domain is provided: embed it and use hybrid search (`match_patent_hybrid`) to rank patents
-  by relevance; otherwise fall back to most recent (ordered by `created_at`)
-- Cap at **MAX_CORPUS_PATENTS = 30** to stay within token budget
-- For each patent: fetch patent_number, title, assignee, publication_date
-- Fetch representative chunks per patent — section_types controlled by `scope` parameter:
-  - `"full"` → `["claim_independent", "claim_dependent", "description"]`
-  - `"claims"` → `["claim_independent", "claim_dependent"]`
-  - `"description"` → `["description"]`
-- Cap chunks to **MAX_CLAIM_CHARS = 400 chars** each, **MAX_CHUNKS_PER_PATENT = 2**
+**Step 2 — `extract_trend_data`** — pure DB aggregation, no LLM. Groups `publication_date`
+by year into `[{year, count}]` sorted ascending.
 
-**Step 2 — Trend data** (`extract_trend_data`)
-- Pure DB aggregation — no LLM
-- Read `publication_date` from `patent_documents` (filtered by jurisdiction)
-- Group by year, return `[{year: int, count: int}]` sorted ascending
-- Handle NULL publication_date gracefully (skip)
+**Step 3 — `call_agent_analyst`** (LLM call 1) — clusters patents into 3–6 technology groups,
+identifies 3–6 whitespace gap areas (each with `opportunity_level: HIGH|MEDIUM|LOW`).
 
-**Step 3 — `call_agent_analyst`** (LLM call 1)
-- Input: list of `{patent_number, title, claim_summary}` as a JSON block + domain + focus_prompt
-- Ask the LLM to group patents into **3–6 technology clusters** and identify **3–6 gap areas**
-- Output schema (minified JSON):
-  ```json
-  {
-    "clusters": [
-      {"name": "...", "summary": "1-2 sentences", "patent_numbers": ["EP1234", "..."]}
-    ],
-    "gaps": [
-      {"area": "...", "description": "1-2 sentences", "opportunity_level": "HIGH|MEDIUM|LOW",
-       "related_patents": ["EP1234"]}
-    ]
-  }
-  ```
-- `patent_count` per cluster is computed from `len(patent_numbers)` server-side after parsing
-
-**Step 4 — `call_agent_innovator`** (LLM call 2)
-- Input: clusters + gaps (from Step 3) + domain + focus_prompt + glass manufacturing constraints
-- Ask the LLM to generate **3–5 innovation vectors** grounded in the identified gaps
-- Each vector is scored for feasibility and novelty (HIGH/MEDIUM/LOW)
-- Output schema:
-  ```json
-  {
-    "innovations": [
-      {
-        "title": "...",
-        "description": "2-3 sentences",
-        "feasibility": "HIGH|MEDIUM|LOW",
-        "novelty": "HIGH|MEDIUM|LOW",
-        "gap_rationale": "1 sentence explaining why this gap exists",
-        "addresses_clusters": ["Cluster name 1", "..."]
-      }
-    ]
-  }
-  ```
-
-**Step 5 — Orchestrator** (`run_innovation_pipeline`)
-- Calls Steps 1-4 in sequence
-- Assembles and returns the full `InnovationResponse`
-
-### API response shape (matches existing frontend)
-```json
-{
-  "domain": "Automotive laminated glass",
-  "patent_count": 15,
-  "clusters": [{"name": "...", "summary": "...", "patent_count": 3}],
-  "gaps": [{"area": "...", "description": "...", "opportunity_level": "HIGH", "related_patents": ["EP..."]}],
-  "innovations": [{"title": "...", "description": "...", "feasibility": "HIGH", "novelty": "MEDIUM",
-                   "gap_rationale": "...", "addresses_clusters": ["Cluster name"]}],
-  "trend_data": [{"year": 2019, "count": 2}, {"year": 2021, "count": 5}]
-}
-```
+**Step 4 — `call_agent_innovator`** (LLM call 2) — generates 3–5 innovation vectors grounded
+in the identified gaps. Each vector carries `feasibility`, `novelty` (HIGH/MEDIUM/LOW),
+`gap_rationale`, and `addresses_clusters`.
 
 ### Token budget
 - 30 patents × 2 chunks × 400 chars ≈ 24 000 chars ≈ 6 000 tokens of context per call

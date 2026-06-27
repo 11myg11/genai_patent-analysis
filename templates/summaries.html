@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Summaries{% endblock %}
+{% block page_title %}Summaries{% endblock %}
 {% block content %}
 <div class="p-7 flex flex-col gap-5" x-data="summariesPage()" x-init="init()">
 
   <!-- Page header -->
   <div>
-    <h1 class="font-display text-2xl font-bold text-white tracking-tight">Summaries</h1>
     <p class="mt-1 text-sm" style="color:var(--text2)">
       One-page PDF summaries combining the original idea, top risk, best design fix, and
       highest-opportunity innovations.

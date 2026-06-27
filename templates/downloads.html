@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Download Center{% endblock %}
+{% block page_title %}Download Center{% endblock %}
 {% block content %}
 <div class="p-7 flex flex-col gap-5" x-data="downloadsPage()" x-init="init()">
 
   <!-- Page header — same shape as /summaries -->
   <div>
-    <h1 class="font-display text-2xl font-bold text-white tracking-tight">Download Center</h1>
     <p class="mt-1 text-sm" style="color:var(--text2)">
       Your recent PDF downloads from this browser. History is stored locally and not shared
       across devices or users.

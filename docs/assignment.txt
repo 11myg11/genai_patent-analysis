@@ -1,0 +1,60 @@
+Project 8 — AI-based Patent Analysis,
+Design-Around & Innovation Recommendation
+Partner
+
+Fuyao Europe
+
+Focus
+
+Industrial and Applied Application
+
+Contact
+
+jinmian.shi@fuyaogroup.eu
+
+Sync
+
+Monthly
+
+Resources
+
+Datasets
+
+Project Details
+The goal of this project is to develop an AI-supported system that can read and understand patent
+documents, compare them with product designs, identify potential risks, and provide suggestions for
+design improvement and innovation. The project is structured in four phases with accompanying
+evaluation criteria.
+
+Phase 1: Patent Understanding and Data Structuring
+Collect and review patent documents (e.g., claims and descriptions). Extract key technical features
+and organize them in a structured way. Build a simple database or schematic diagram for further
+analysis.
+
+Phase 2: Risk Identification
+Compare product design inputs (e.g., key features or simplified descriptions) with patent content.
+Identify overlapping areas and potential risks. Highlight critical features that may be sensitive.
+
+Phase 3: Design Improvement Suggestions
+Propose alternative design ideas to reduce or avoid risks. Ensure suggestions are realistic and
+feasible from an engineering perspective. Provide clear and structured outputs.
+
+Phase 4: Innovation Opportunities
+Review multiple patents to identify common patterns and gaps. Suggest potential directions for new
+ideas or improvements.
+
+Evaluation Criteria / KPIs
+• Accuracy of Information Extraction — How correctly key features are identified from patents.
+• Risk Identification Quality — How well potential conflicts are detected.
+• Quality of Suggestions — Usefulness and feasibility of design improvement ideas, evaluated
+by experts.
+• Innovation Relevance — Whether proposed ideas are meaningful and practical.
+• Usability — Clarity and usefulness of the system from a user perspective.
+
+About the Partner
+Fuyao Europe, headquartered in Leingarten near Heilbronn, is the German subsidiary of the China
+Fuyao Glass Industry Group — the world’s largest provider of integrated automotive glass and trim
+solutions. Customers include JLR, Volkswagen Group, GM, BMW, Mercedes-Benz, Ford, Stellantis,
+and others.
+
+

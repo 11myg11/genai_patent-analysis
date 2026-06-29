@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block title %}Risk Analysis{% endblock %}
+{% block page_title %}Risk Analysis{% endblock %}
+{% block content %}
+<div class="p-7 flex flex-col gap-5" x-data="riskPage()" x-init="init()">
+
+  <!-- Page header -->
+  <div class="flex items-start justify-between">
+    <div>
+      <p class="mt-1 text-sm" style="color:var(--text2)">
+        Enter your product design specifications to identify potential patent conflicts within the database.
+      </p>
+    </div>
+    <div class="flex items-center gap-2 px-4 py-2 rounded-full"
+         style="background:rgba(0,96,169,0.08);border:1px solid rgba(0,96,169,0.2)">
+      <div style="width:7px;height:7px;border-radius:50%;background:#4d9ed4;box-shadow:0 0 6px #4d9ed4"></div>
+      <span class="text-xs font-mono" style="color:#4d9ed4">
+        {{ patents|length }} patent{{ 's' if patents|length != 1 else '' }} in corpus
+      </span>
+    </div>
+  </div>
+
+  <!-- Input card -->
+  <div class="card p-5" style="border-radius:16px">
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      <div>
+        <p class="label mb-1.5">Product ID</p>
+        <input x-model="form.product_id" type="text" placeholder="e.g. FYG-WS-2024-A7" class="w-full px-3 py-2.5 text-sm"/>
+      </div>
+      <div>
+        <p class="label mb-1.5">Component Scope</p>
+        <input x-model="form.component_scope" type="text" placeholder="e.g. Automotive laminated windshield" class="w-full px-3 py-2.5 text-sm"/>
+      </div>
+      <div>
+        <p class="label mb-1.5">Search Corpus By Jurisdiction</p>
+        <select x-model="form.jurisdiction" class="w-full px-3 py-2.5 text-sm">
+          <option value="ALL">🌍 All Jurisdictions (full corpus)</option>
+          {% for jx in jurisdictions %}
+          <option value="{{ jx }}">{{ jx }} patents only</option>
+          {% endfor %}
+        </select>
+        <p class="mt-1.5 text-xs" style="color:var(--text3)">Filters which patents in the database are compared against your design.</p>
+      </div>
+    </div>
+    <div class="mb-4">
+      <p class="label mb-1.5">Proposed Design Specification</p>
+      <textarea x-model="form.specs" rows="6"
+        placeholder="Describe your product design in detail — materials, dimensions, layer composition, construction method, functional novelties, manufacturing process…"
+        class="w-full px-3 py-3 text-sm resize-none" style="line-height:1.7"></textarea>
+    </div>
+    <div class="flex items-center gap-3">
+      <button class="btn btn-primary" style="padding:10px 28px" @click="runAnalysis()" :disabled="!form.specs || !form.product_id || loading">
+        <span x-show="!loading" class="flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="currentColor" stroke-width="2" fill="none"/>
+            <path d="M12 9v4M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          Run Risk Analysis
+        </span>
+        <span x-show="loading" class="flex items-center gap-2">
+          <div class="spinner" style="width:14px;height:14px"></div>
+          Analysing…
+        </span>
+      </button>
+      <button class="btn btn-secondary" @click="reset()">Clear</button>
+    </div>
+  </div>
+
+  {% include "_pipeline_status.html" %}
+
+  <!-- Error banner -->
+  <div x-show="errorMsg" x-transition class="card p-4 flex items-start gap-3"
+       style="border-radius:12px;border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.06)">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:2px">
+      <circle cx="12" cy="12" r="10" stroke="#fbbf24" stroke-width="1.8"/>
+      <path d="M12 8v4M12 16h.01" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <p class="text-xs leading-relaxed" style="color:var(--text2)" x-text="errorMsg"></p>
+  </div>
+
+  <!-- Results section -->
+  <div x-show="result" x-transition class="flex flex-col gap-5">
+
+    <!-- Risk summary bar -->
+    <div class="card p-5 flex items-center gap-5" style="border-radius:16px">
+      <div>
+        <p class="label mb-1">Overall Risk Status</p>
+        <span class="badge text-sm"
+              :class="{'badge-high':result&&result.risk_status==='HIGH','badge-medium':result&&result.risk_status==='MEDIUM','badge-low':result&&result.risk_status==='LOW','badge-clear':result&&result.risk_status==='CLEAR'}"
+              x-text="result ? result.risk_status : ''"></span>
+      </div>
+      <div style="width:1px;height:36px;background:var(--border)"></div>
+      <div>
+        <p class="label mb-1">Product ID</p>
+        <p class="font-mono text-sm text-white" x-text="result ? result.product_id : ''"></p>
+      </div>
+      <div style="width:1px;height:36px;background:var(--border)"></div>
+      <div>
+        <p class="label mb-1">Patents Assessed</p>
+        <p class="font-mono text-sm text-white" x-text="result ? result.patent_assessments.length + ' patents' : ''"></p>
+      </div>
+      <div style="width:1px;height:36px;background:var(--border)"></div>
+      <div>
+        <p class="label mb-1">Token Budget Used</p>
+        <p class="font-mono text-sm" style="color:var(--text2)" x-text="result ? '~' + result.token_budget_used + ' tokens' : ''"></p>
+      </div>
+    </div>
+
+    <!-- Risk → Design Improvements handoff banner — only surfaces when there's
+         actually something to act on (HIGH/MEDIUM). Clicking it stashes the
+         current form in sessionStorage so Design Improvements opens pre-filled;
+         the sidebar nav link to that page is untouched, so navigating there
+         directly still starts from an empty form. -->
+    <div x-show="result && (result.risk_status==='HIGH' || result.risk_status==='MEDIUM')" x-transition
+         class="card p-5 flex items-center gap-4" style="border-radius:16px;border-color:rgba(0,135,90,0.2);background:rgba(0,135,90,0.04)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="flex-shrink:0">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#00875a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <p class="text-sm font-semibold text-white">Significant patent overlap detected.</p>
+        <p class="text-xs mt-0.5" style="color:var(--text3)">Generate design-around proposals that avoid the conflicting claims.</p>
+      </div>
+      <button class="btn btn-secondary ml-auto" style="font-size:12px;padding:8px 20px;white-space:nowrap" @click="goToDesignImprovements()">Generate Design Improvements →</button>
+    </div>
+
+    <!-- Patent assessment cards -->
+    <div class="card flex flex-col overflow-hidden" style="border-radius:16px">
+      <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border)">
+        <div>
+          <p class="label">Matched Evidence</p>
+          <p class="text-xs mt-0.5" style="color:var(--text3)">Per-patent claim analysis · sorted by risk score</p>
+        </div>
+        <span class="badge badge-info font-mono" x-text="result ? result.patent_assessments.length + ' patents' : ''"></span>
+      </div>
+
+      <!-- Empty state -->
+      <div x-show="!result || !result.patent_assessments || result.patent_assessments.length === 0"
+           class="flex flex-col items-center justify-center py-14 gap-2">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" style="opacity:0.3">
+          <path d="M5 13l4 4L19 7" stroke="#00875a" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+        <p class="text-sm" style="color:var(--text3)">No patent overlap detected.</p>
+      </div>
+
+      <!-- One card per patent -->
+      <template x-for="(p, i) in (result ? result.patent_assessments : [])" :key="i">
+        <div class="px-5 py-5 fade-up" :style="`border-bottom:1px solid var(--border);animation-delay:${i*0.07}s`">
+
+          <!-- Patent header row -->
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <span class="font-mono text-sm font-bold" style="color:#4d9ed4" x-text="p.patent_number"></span>
+              <span class="text-xs" style="color:var(--text2)" x-text="p.title"></span>
+              <span class="badge badge-neutral font-mono text-xs" x-text="p.jurisdiction"></span>
+            </div>
+            <!-- Risk score badge -->
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2">
+                <p class="text-xs" style="color:var(--text3)">Risk Score</p>
+                <span class="font-display text-lg font-bold"
+                  :style="`color:${p.risk_score>=70?'#f87171':p.risk_score>=40?'#fbbf24':p.risk_score>=10?'#00875a':'#6ee7b7'}`"
+                  x-text="p.risk_score + ' / 100'"></span>
+                <span class="badge text-xs"
+                  :class="p.risk_score>=70?'badge-high':p.risk_score>=40?'badge-medium':p.risk_score>=10?'badge-low':'badge-clear'"
+                  x-text="p.risk_score>=70?'Critical':p.risk_score>=40?'Moderate':p.risk_score>=10?'Low':'Clear'"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Risk score bar -->
+          <div class="mb-4" style="height:4px;border-radius:2px;background:rgba(0,0,0,0.07);overflow:hidden">
+            <div style="height:100%;border-radius:2px;transition:width 0.6s ease"
+              :style="`width:${p.risk_score}%;background:${p.risk_score>=70?'#f87171':p.risk_score>=40?'#fbbf24':p.risk_score>=10?'#00875a':'#6ee7b7'}`"></div>
+          </div>
+
+          <!-- Three element columns -->
+          <div class="grid grid-cols-3 gap-3 mb-4">
+
+            <!-- Matched -->
+            <div class="px-3 py-3 rounded-lg" style="background:rgba(0,135,90,0.06);border:1px solid rgba(0,135,90,0.15)">
+              <p class="label mb-2" style="color:#00875a">Matched Elements</p>
+              <template x-if="p.matched_elements && p.matched_elements.length">
+                <ul class="flex flex-col gap-1">
+                  <template x-for="el in p.matched_elements" :key="el">
+                    <li class="flex items-start gap-1.5 text-xs" style="color:var(--text2)">
+                      <span style="color:#00875a;flex-shrink:0;margin-top:1px">✓</span>
+                      <span x-text="el"></span>
+                    </li>
+                  </template>
+                </ul>
+              </template>
+              <p x-show="!p.matched_elements || !p.matched_elements.length" class="text-xs" style="color:var(--text3)">None identified</p>
+            </div>
+
+            <!-- Potential Protective Difference -->
+            <div class="px-3 py-3 rounded-lg" style="background:rgba(0,96,169,0.06);border:1px solid rgba(0,96,169,0.15)">
+              <p class="label mb-2" style="color:#4d9ed4">Potential Protective Difference</p>
+              <template x-if="p.missing_elements && p.missing_elements.length">
+                <ul class="flex flex-col gap-1">
+                  <template x-for="el in p.missing_elements" :key="el">
+                    <li class="flex items-start gap-1.5 text-xs" style="color:var(--text2)">
+                      <span style="color:#4d9ed4;flex-shrink:0;margin-top:1px">✗</span>
+                      <span x-text="el"></span>
+                    </li>
+                  </template>
+                </ul>
+              </template>
+              <p x-show="!p.missing_elements || !p.missing_elements.length" class="text-xs" style="color:var(--text3)">None identified</p>
+            </div>
+
+            <!-- Unclear -->
+            <div class="px-3 py-3 rounded-lg" style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.15)">
+              <p class="label mb-2" style="color:#fbbf24">Unclear / Review</p>
+              <template x-if="p.unclear_elements && p.unclear_elements.length">
+                <ul class="flex flex-col gap-1">
+                  <template x-for="el in p.unclear_elements" :key="el">
+                    <li class="flex items-start gap-1.5 text-xs" style="color:var(--text2)">
+                      <span style="color:#fbbf24;flex-shrink:0;margin-top:1px">?</span>
+                      <span x-text="el"></span>
+                    </li>
+                  </template>
+                </ul>
+              </template>
+              <p x-show="!p.unclear_elements || !p.unclear_elements.length" class="text-xs" style="color:var(--text3)">None flagged</p>
+            </div>
+
+          </div>
+
+          <!-- Explanation -->
+          <div class="px-3 py-3 rounded-lg" style="background:rgba(0,96,169,0.04);border:1px solid rgba(0,96,169,0.12)">
+            <p class="label mb-1">Explanation</p>
+            <p class="text-xs leading-relaxed" style="color:var(--text2)" x-text="p.overlap_explanation || 'No explanation provided.'"></p>
+          </div>
+
+        </div>
+      </template>
+    </div>
+
+  </div><!-- end results -->
+
+</div><!-- end Alpine root -->
+
+<script>
+function riskPage() {
+  return {
+    loading: false,
+    pipelineDone: false,
+    result: null,
+    errorMsg: '',
+    form: { product_id: '', component_scope: 'Automotive laminated windshield', specs: '', jurisdiction: 'ALL' },
+    stages: [
+      { key:'embed',      label:'Analyzing your specification',  status:'pending' },
+      { key:'search',     label:'Searching patent database',      status:'pending' },
+      { key:'candidates', label:'Identifying candidate patents',  status:'pending' },
+      { key:'assess',     label:'Assessing infringement risk',    status:'pending' },
+    ],
+    init() {
+      try {
+        const saved = sessionStorage.getItem('risk_last_result');
+        if (saved) this.result = JSON.parse(saved);
+        const savedForm = sessionStorage.getItem('risk_last_form');
+        if (savedForm) this.form = { ...this.form, ...JSON.parse(savedForm) };
+      } catch(e) {}
+    },
+    pipelineOpen() { return this.loading || this.pipelineDone || !!this.errorMsg; },
+    sortedAssessments() {
+      if (!this.result || !this.result.patent_assessments) return [];
+      return [...this.result.patent_assessments].sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0));
+    },
+    goToDesignImprovements() {
+      // Hand the current inputs to Design Improvements via sessionStorage — read
+      // once and deleted there, so it only ever applies on this explicit click,
+      // never on a plain sidebar nav visit to that page.
+      try {
+        sessionStorage.setItem('risk_to_design_handoff', JSON.stringify({
+          product_id:      this.form.product_id,
+          component_scope: this.form.component_scope,
+          specs:           this.form.specs,
+          jurisdiction:    this.form.jurisdiction,
+        }));
+      } catch(e) {}
+      window.location.href = '/design-suggestions';
+    },
+    reset() {
+      this.result = null; this.errorMsg = '';
+      this.form.specs = ''; this.form.product_id = '';
+      this.stages.forEach(s => s.status = 'pending');
+      sessionStorage.removeItem('risk_last_result');
+      sessionStorage.removeItem('risk_last_form');
+    },
+    async runAnalysis() {
+      if (!this.form.specs || !this.form.product_id) return;
+      this.loading = true; this.result = null; this.errorMsg = '';
+      this.stages.forEach(s => s.status = 'pending');
+      await streamPipeline('/api/v1/risk-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id: this.form.product_id,
+          component_scope: this.form.component_scope,
+          proposed_specifications: this.form.specs,
+          jurisdiction: this.form.jurisdiction,
+        }),
+      }, {
+        onStep: (key, status) => {
+          const s = this.stages.find(s => s.key === key);
+          if (s) s.status = status;
+        },
+        onResult: (data) => {
+          this.result = data;
+          try {
+            sessionStorage.setItem('risk_last_result', JSON.stringify(data));
+            sessionStorage.setItem('risk_last_form', JSON.stringify(this.form));
+          } catch(e) {}
+          this.loading = false;
+          this.pipelineDone = true;
+          setTimeout(() => { this.pipelineDone = false; }, 1300);
+        },
+        onError: (msg) => {
+          this.stages.forEach(s => { if (s.status === 'active') s.status = 'error'; });
+          this.errorMsg = msg;
+          this.loading = false;
+        },
+      });
+    },
+  };
+}
+</script>
+{% endblock %}

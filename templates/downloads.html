@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Download Center{% endblock %}
+{% block page_title %}Download Center{% endblock %}
+{% block content %}
+<div class="p-7 flex flex-col gap-5" x-data="downloadsPage()" x-init="init()">
+
+  <!-- Page header — same shape as /summaries -->
+  <div>
+    <p class="mt-1 text-sm" style="color:var(--text2)">View and re-download your recent PDF reports. The download history is stored in this browser and is not shared with other users.</p>
+  </div>
+
+  <!-- List -->
+  <div class="card flex flex-col overflow-hidden" style="border-radius:16px">
+    <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border)">
+      <p class="label">Recent Downloads</p>
+      <div class="flex items-center gap-2">
+        <span class="badge badge-info font-mono"
+              x-text="list.length + (list.length === 1 ? ' item' : ' items')"></span>
+        <button x-show="list.length" @click="clearAll()"
+                style="padding:4px 10px;border-radius:7px;border:1px solid rgba(239,68,68,0.22);background:rgba(239,68,68,0.06);color:#f87171;font-size:11px;cursor:pointer;transition:background 0.15s"
+                @mouseenter="$el.style.background='rgba(239,68,68,0.13)'"
+                @mouseleave="$el.style.background='rgba(239,68,68,0.06)'">
+          Clear History
+        </button>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div x-show="!list.length" class="flex flex-col items-center justify-center py-16 gap-3">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" style="opacity:0.25">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"
+              stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <p class="text-sm" style="color:var(--text3)">No downloads yet.</p>
+      <p class="text-xs" style="color:var(--text3);max-width:340px;text-align:center">
+        Generate a Patent Analysis Sheet from the Patent Library, or download a Management Summary,
+        and it will appear here.
+      </p>
+    </div>
+
+    <!-- Items -->
+    <template x-for="(item, idx) in list" :key="item.url + '|' + item.ts">
+      <div class="px-5 py-3 flex items-center gap-4 fade-up" style="border-bottom:1px solid var(--border)">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-white truncate" x-text="item.label"></p>
+          <p class="text-xs mt-0.5" style="color:var(--text3)">
+            <span x-text="item.type || 'PDF'"></span>
+            ·
+            <span x-text="formatTs(item.ts)"></span>
+          </p>
+        </div>
+        <a :href="item.url" target="_blank" rel="noopener"
+           :data-dl-label="item.label" :data-dl-type="item.type"
+           class="btn btn-secondary" style="font-size:11px;padding:5px 14px">Download Again</a>
+        <button @click="removeItem(idx)"
+                style="padding:5px 10px;border-radius:7px;border:1px solid rgba(239,68,68,0.22);background:rgba(239,68,68,0.06);color:#f87171;font-size:11px;cursor:pointer;transition:background 0.15s"
+                @mouseenter="$el.style.background='rgba(239,68,68,0.13)'"
+                @mouseleave="$el.style.background='rgba(239,68,68,0.06)'">
+          Remove
+        </button>
+      </div>
+    </template>
+  </div>
+
+</div><!-- end Alpine root -->
+
+<script>
+function downloadsPage() {
+  return {
+    list: [],
+    KEY: 'patentos.downloads',
+    init() {
+      this.refresh();
+      // Update if a download happens in another tab while this page is open.
+      window.addEventListener('storage', (e) => {
+        if (e.key === this.KEY) this.refresh();
+      });
+    },
+    refresh() {
+      try {
+        this.list = JSON.parse(localStorage.getItem(this.KEY) || '[]');
+      } catch(e) { this.list = []; }
+    },
+    removeItem(idx) {
+      this.list.splice(idx, 1);
+      localStorage.setItem(this.KEY, JSON.stringify(this.list));
+    },
+    clearAll() {
+      localStorage.removeItem(this.KEY);
+      this.list = [];
+    },
+    formatTs(ts) {
+      if (!ts) return '';
+      const d = new Date(ts);
+      const today = new Date();
+      const sameDay = d.toDateString() === today.toDateString();
+      if (sameDay) {
+        return 'Today, ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      }
+      return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })
+           + ', ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+    },
+  };
+}
+</script>
+{% endblock %}

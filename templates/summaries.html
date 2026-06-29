@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Summaries{% endblock %}
+{% block page_title %}Summaries{% endblock %}
+{% block content %}
+<div class="p-7 flex flex-col gap-5" x-data="summariesPage()" x-init="init()">
+
+  <!-- Page header -->
+  <div>
+    <p class="mt-1 text-sm" style="color:var(--text2)">Download one-page PDF reports that summarise the risk assessment, design proposals, and innovation opportunities for a selected product specification.</p>
+  </div>
+
+  <!-- List -->
+  <div class="card flex flex-col overflow-hidden" style="border-radius:16px">
+    <div class="px-5 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--border)">
+      <p class="label">Generated Reports</p>
+      <span class="badge badge-info font-mono" x-text="list.length + (list.length === 1 ? ' report' : ' reports')"></span>
+    </div>
+
+    <!-- Empty state -->
+    <div x-show="!list.length" class="flex flex-col items-center justify-center py-16 gap-3">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" style="opacity:0.25">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M14 2v6h6" stroke="currentColor" stroke-width="1.8"/>
+      </svg>
+      <p class="text-sm" style="color:var(--text3)">No reports yet.</p>
+    </div>
+
+    <template x-for="item in list" :key="item.id">
+      <div class="px-5 py-3 flex items-center gap-4 fade-up" style="border-bottom:1px solid var(--border)">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-white truncate" x-text="item.product_id || 'Unnamed product'"></p>
+          <p class="text-xs mt-0.5" style="color:var(--text3)"
+             x-text="(item.domain ? item.domain + ' · ' : '') + new Date(item.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})"></p>
+        </div>
+        <a :href="`/api/v1/management-summaries/${item.id}/pdf`"
+           :data-dl-label="(item.product_id || 'Unnamed product') + (item.domain ? ' · ' + item.domain : '')"
+           data-dl-type="Management Summary"
+           class="btn btn-secondary" style="font-size:11px;padding:5px 14px">Download</a>
+        <button @click="deleteReport(item.id)"
+                style="padding:5px 10px;border-radius:7px;border:1px solid rgba(239,68,68,0.22);background:rgba(239,68,68,0.06);color:#f87171;font-size:11px;cursor:pointer;transition:background 0.15s"
+                @mouseenter="$el.style.background='rgba(239,68,68,0.13)'"
+                @mouseleave="$el.style.background='rgba(239,68,68,0.06)'">
+          Delete
+        </button>
+      </div>
+    </template>
+  </div>
+
+</div><!-- end Alpine root -->
+
+<script>
+function summariesPage() {
+  return {
+    list: [],
+    async init() {
+      await this.refresh();
+    },
+    async refresh() {
+      try {
+        const r = await fetch('/api/v1/management-summaries');
+        if (r.ok) this.list = await r.json();
+      } catch(e) {}
+    },
+    async deleteReport(id) {
+      try {
+        await fetch(`/api/v1/management-summaries/${id}`, { method: 'DELETE' });
+      } catch(e) {}
+      await this.refresh();
+    },
+  };
+}
+</script>
+{% endblock %}

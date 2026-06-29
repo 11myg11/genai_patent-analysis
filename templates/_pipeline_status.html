@@ -1,0 +1,51 @@
+<!-- Pipeline status drawer — shared across all async pipelines (ingest, risk, design,
+     innovation). Expects an Alpine `stages` array in scope: [{ key, label, status }],
+     status one of pending | active | done | skipped | error, plus a `pipelineOpen()`
+     method returning whether a run is currently in flight or just failed. Driven by
+     real backend progress via streamPipeline() (see base.html), not a simulated timer.
+
+     Fixed-position overlay (see .pipeline-drawer in base.html) that slides in from
+     the right edge of the screen, like the left sidebar but only while a process is
+     actually running — it never reserves layout space when idle. A stage enters the
+     list the moment the backend reports it (status !== 'pending'), so steps appear
+     one at a time, top to bottom, as the pipeline actually reaches them. The slim
+     progress bar under a row is shown only while that exact step is "active".
+
+     `pipelineDone` is an optional Alpine bool (defaults to falsy if a page doesn't
+     define it) that a page flips to true right when onResult fires and back to
+     false ~1.2s later via setTimeout — just long enough for a "Done" confirmation
+     to register before the drawer slides away. pipelineOpen() must OR it in so the
+     drawer doesn't close mid-confirmation. -->
+<div class="pipeline-drawer" :class="{ 'pipeline-drawer-open': pipelineOpen() }">
+  <p class="label mb-4">Pipeline Status</p>
+  <div class="flex flex-col gap-3">
+    <template x-for="s in stages.filter(s => s.status !== 'pending')" :key="s.key">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <div style="width:10px;height:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center">
+            <div x-show="s.status==='active'" class="spinner" style="width:9px;height:9px;border-width:1.5px;border-top-color:#4d9ed4"></div>
+            <div x-show="s.status!=='active'" class="rounded-full"
+                 style="width:8px;height:8px"
+                 :class="s.status==='done'?'bullet-success':s.status==='skipped'?'bullet-warning':s.status==='error'?'bullet-danger':''"></div>
+          </div>
+          <span class="text-sm"
+                :style="s.status==='done'?'color:#1A9A6D':
+                        s.status==='active'?'color:var(--text)':
+                        s.status==='error'?'color:#D64545':
+                        'color:var(--text3);text-decoration:line-through'"
+                x-text="s.label"></span>
+        </div>
+        <div x-show="s.status==='active'" class="progress-indeterminate" style="margin:6px 0 0 18px"></div>
+      </div>
+    </template>
+    <p x-show="!stages.some(s => s.status !== 'pending')" class="text-xs" style="color:var(--text3)">Waiting to start&hellip;</p>
+    <div x-show="pipelineDone" x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-300"
+         x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+         class="flex items-center gap-2.5 mt-1 pt-3" style="border-top:1px solid var(--border)">
+      <div class="rounded-full bullet-success" style="width:8px;height:8px;flex-shrink:0"></div>
+      <span class="text-sm" style="color:#1A9A6D;font-weight:500">Done</span>
+    </div>
+  </div>
+</div>

@@ -12,6 +12,7 @@ For non-English patents install the matching language pack, e.g.:
 Global variables:
   CLAIM_INDEP_RE / CLAIM_DEP_RE / CLAIM_NUM_RE — Pre-compiled regexes for classifying
     a paragraph as an independent claim, dependent claim, or description section.
+  _text_splitter — LangChain RecursiveCharacterTextSplitter (chunk_size=500, overlap=50)
 
 Functions:
   extract_page_text(page, src_lang) -> str
@@ -24,9 +25,8 @@ Functions:
     based on regex patterns. Used to label chunks stored in Supabase.
 
   split_into_chunks(full_text) -> list[dict]
-    Splits a page's full text on double newlines into labelled paragraphs.
-    Short paragraphs (< 80 chars) are merged into the previous one to avoid
-    fragmenting numbered list items. Chunks shorter than 10 chars are dropped.
+    Splits full document text using RecursiveCharacterTextSplitter (500 chars, 50 overlap),
+    then labels each chunk via determine_section_type. Chunks shorter than 10 chars are dropped.
 
   extract_figure_pages(doc) -> list[dict]
     Iterates all pages in the document and renders qualifying pages as PNG images.
@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import fitz
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.config import PAGE_DPI, MIN_NATIVE_CHARS, FIGURE_DPI, FIGURE_TEXT_THRESHOLD
 
@@ -81,6 +82,8 @@ CLAIM_DEP_REF_RE = re.compile(
     r"^\s*\d{1,3}\.\s.*\bof\s+claim\s+\d+\b",
     re.IGNORECASE,
 )
+
+_text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
 
 # Map ISO 639-1 codes → Tesseract language codes (only non-obvious ones needed)
 _TESS_LANG: Dict[str, str] = {
@@ -151,61 +154,22 @@ def determine_section_type(text: str) -> str:
 
 def split_into_chunks(full_text: str) -> List[Dict[str, str]]:
     """
-    Split document text into labelled chunks.
-
-    Two-pass strategy:
-    Pass 1 — Split on double newlines (paragraph boundaries) as before.
-    Pass 2 — Within each paragraph, also split on numbered claim boundaries
-             (e.g. "7. The laminate…") so that claims not separated by blank
-             lines still get their own chunk.
-
-    Fix 3: claim-aware re-split ensures claims without blank lines between them
-           are not merged into one unclassifiable blob.
-    Fix 4: merge guard — short paragraphs that START with a claim number are
-           never merged into the previous buffer, preventing claim beginnings
-           from being swallowed into the preceding description chunk.
+    Split document text into labelled chunks using LangChain's
+    RecursiveCharacterTextSplitter (500 chars, 50 overlap), then classify
+    each chunk with determine_section_type so the risk pipeline can distinguish
+    independent claims from dependent claims and description text.
     """
-    # Pass 1 — split on blank lines
-    raw_paragraphs = re.split(r"\n{2,}", full_text)
-
-    # Pass 2 — re-split each paragraph on numbered claim boundaries
-    paragraphs: List[str] = []
-    for para in raw_paragraphs:
-        para = para.strip()
-        if not para:
+    raw_chunks = _text_splitter.split_text(full_text)
+    result: List[Dict[str, str]] = []
+    for text in raw_chunks:
+        text = text.strip()
+        if len(text) < 10:
             continue
-        # If this paragraph contains more than one numbered item, split it further
-        sub_parts = CLAIM_BOUNDARY_RE.split(para)
-        if len(sub_parts) > 1:
-            paragraphs.extend(p.strip() for p in sub_parts if p.strip())
-        else:
-            paragraphs.append(para)
-
-    # Merge short fragments — but never merge a claim-starting paragraph
-    chunks: List[Dict[str, str]] = []
-    buffer = ""
-    for para in paragraphs:
-        if not para:
-            continue
-        is_claim_start = bool(CLAIM_NUM_RE.match(para))  # Fix 4 — guard
-        if buffer and len(para) < 80 and not is_claim_start:
-            # Safe to merge — short non-claim fragment
-            buffer += " " + para
-        else:
-            if buffer:
-                chunks.append({
-                    "section_type": determine_section_type(buffer),
-                    "content":      buffer,
-                })
-            buffer = para
-
-    if buffer:
-        chunks.append({
-            "section_type": determine_section_type(buffer),
-            "content":      buffer,
+        result.append({
+            "section_type": determine_section_type(text),
+            "content":      text,
         })
-
-    return [c for c in chunks if len(c["content"]) >= 10]
+    return result
 
 
 def extract_figure_pages(doc: fitz.Document) -> List[Dict]:

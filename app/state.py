@@ -9,7 +9,7 @@ Import it wherever you need the embedding model or Supabase client:
   state.supabase.table("patent_documents").select("*").execute()
 
 Fields:
-  embed_model  — Loaded SentenceTransformer (BAAI/bge-small-en-v1.5)
+  embed_model  — Loaded SentenceTransformer (jinaai/jina-embeddings-v3, trust_remote_code=True)
   supabase     — Supabase client (sync; wrap with asyncio.to_thread in async routes)
 """
 from dataclasses import dataclass

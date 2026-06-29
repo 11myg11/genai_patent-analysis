@@ -277,6 +277,7 @@ def save_summary(product_id: str, domain: str, pdf_bytes: bytes) -> Dict[str, An
         .insert({
             "product_id": product_id,
             "domain":     domain,
+            "summary":    "",
             "pdf_data":   "\\x" + pdf_bytes.hex(),
         })
         .execute()

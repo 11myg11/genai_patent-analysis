@@ -7,7 +7,7 @@ belongs in app/services/ and app/routes/.
 
 Startup sequence (lifespan):
   1. Validate required env vars (fails fast with a clear message if missing)
-  2. Load BAAI/bge-small-en-v1.5 embedding model into app.state.state.embed_model
+  2. Load jinaai/jina-embeddings-v3 embedding model into app.state.state.embed_model
   3. Create Supabase client → app.state.state.supabase
   4. Log the active OpenRouter model
 
@@ -73,7 +73,9 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("OPENROUTER_API_KEY must be set in .env or .env.txt")
 
     log.info("Startup: loading embedding model %s…", EMBEDDING_MODEL)
-    state.embed_model = SentenceTransformer(EMBEDDING_MODEL)
+    # trust_remote_code=True is required by jinaai/jina-embeddings-v3 which ships
+    # custom model code not yet merged into the sentence-transformers core.
+    state.embed_model = SentenceTransformer(EMBEDDING_MODEL, trust_remote_code=True)
     log.info("Embedding model loaded.")
 
     state.supabase = create_client(settings.supabase_url, settings.supabase_anon_key)

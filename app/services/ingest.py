@@ -13,7 +13,7 @@ Pipeline (in order):
   5. Upsert patent_documents row in Supabase (on_conflict=patent_number)
   6. Extract + OCR all pages, split into labelled paragraphs
   7. Translate all chunks to English (no-op if already English)
-  8. Generate 384-dim BGE embeddings in batches of BATCH_SIZE
+  8. Generate 1024-dim Jina v3 embeddings in batches of BATCH_SIZE
   9. Bulk-insert patent_chunks rows (embedding as pgvector string "[x,y,z,...]")
 
 Functions:
@@ -210,7 +210,8 @@ def ingest_pdf(
         log.info("Generating embeddings for %d chunks…", len(all_chunks))
         texts = [c["content"] for c in all_chunks]
         embeddings = embed_model.encode(
-            texts, normalize_embeddings=True, show_progress_bar=False, batch_size=BATCH_SIZE
+            texts, task="retrieval.passage",
+            normalize_embeddings=True, show_progress_bar=False, batch_size=BATCH_SIZE
         )
         step("embed", "done")
 

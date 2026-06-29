@@ -13,7 +13,8 @@ Settings (loaded from .env via pydantic-settings):
   DEBUG                             — Enable debug endpoints (default False)
 
 Key constants:
-  EMBEDDING_MODEL    — BAAI/bge-small-en-v1.5 (384-dim); do not change without re-embedding
+  EMBEDDING_MODEL    — jinaai/jina-embeddings-v3 (1024-dim); do not change without re-embedding
+  EMBED_DIMS         — vector dimension matching the current embedding model (must match schema)
   PVB_MIN/MAX_MM     — PVB interlayer thickness hard limits (Fuyao manufacturing constraint)
   GLASS_TOTAL_MIN/MAX— Total glass stack thickness limits in mm
   BATCH_SIZE         — Supabase insert batch size and embedding encode batch size
@@ -43,8 +44,11 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Embedding
-EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+# Embedding — jinaai/jina-embeddings-v3 uses task-specific LoRA adapters;
+# pass task="retrieval.passage" when encoding documents and task="retrieval.query"
+# when encoding search queries. Requires trust_remote_code=True at load time.
+EMBEDDING_MODEL = "jinaai/jina-embeddings-v3"
+EMBED_DIMS      = 1024
 LLM_MAX_TOKENS = 2048
 TOP_K_CHUNKS = 3
 

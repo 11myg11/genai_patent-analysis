@@ -512,7 +512,8 @@ glass to polymer, or remove the bonding interlayer; such proposals will be rejec
         for round_num in range(MAX_REFINEMENT_ROUNDS + 1):
             try:
                 proposal_embedding = embed_model.encode(
-                    [proposal_spec], normalize_embeddings=True, show_progress_bar=False
+                    [proposal_spec], task="retrieval.query",
+                    normalize_embeddings=True, show_progress_bar=False
                 )[0].tolist()
                 proposal_results  = run_patent_risk_pipeline(
                     proposal_embedding, proposal_spec, proposal_spec, component_scope, jurisdiction,
@@ -527,7 +528,7 @@ glass to polymer, or remove the bonding interlayer; such proposals will be rejec
                     current.get("id"), round_num, proposal_risk_label, proposal_top_score,
                 )
 
-                if proposal_risk_label in ("LOW", "CLEAR"):
+                if proposal_risk_label in ("LOW", "MEDIUM", "CLEAR"):
                     passed = True
                     break
 

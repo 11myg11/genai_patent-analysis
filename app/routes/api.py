@@ -349,6 +349,16 @@ CONTENT:
 
     try:
         summary = llm_json(prompt)
+        # Strip leading "1." / "2." etc. that some models prepend — the template
+        # already renders its own numbering so doubled numbers would appear.
+        # Filter AFTER stripping so bare "1." entries (empty after strip) are removed.
+        import re as _re
+        cleaned = [
+            _re.sub(r'^\s*\d+[\.\)]\s*', '', c).strip()
+            for c in summary.get("key_claims", [])
+            if isinstance(c, str)
+        ]
+        summary["key_claims"] = [c for c in cleaned if c]
     except Exception:
         summary = {
             "abstract": "Summary generation failed.",
@@ -470,8 +480,8 @@ async def compare_patents(req: CompareRequest):
     similarity_score = 0.0
     if a_text.strip() and b_text.strip():
         try:
-            ea = state.embed_model.encode([a_text[:2000]], normalize_embeddings=True)[0]
-            eb = state.embed_model.encode([b_text[:2000]], normalize_embeddings=True)[0]
+            ea = state.embed_model.encode([a_text[:2000]], task="text-matching", normalize_embeddings=True)[0]
+            eb = state.embed_model.encode([b_text[:2000]], task="text-matching", normalize_embeddings=True)[0]
             similarity_score = float(np.dot(ea, eb))
         except Exception as exc:
             log.warning("Similarity embedding failed: %s", exc)
@@ -554,6 +564,7 @@ async def risk_analysis(request: RiskAnalysisRequest):
         query_embedding = (await asyncio.to_thread(
             state.embed_model.encode,
             [request.proposed_specifications],
+            task="retrieval.query",
             normalize_embeddings=True,
             show_progress_bar=False,
         ))[0].tolist()
@@ -625,6 +636,7 @@ async def design_suggestions(request: DesignSuggestionRequest):
         query_embedding = (await asyncio.to_thread(
             state.embed_model.encode,
             [request.proposed_specifications],
+            task="retrieval.query",
             normalize_embeddings=True,
             show_progress_bar=False,
         ))[0].tolist()
@@ -750,6 +762,7 @@ async def innovation_analysis(request: InnovationRequest):
             domain_embedding = (await asyncio.to_thread(
                 state.embed_model.encode,
                 [request.domain],
+                task="retrieval.query",
                 normalize_embeddings=True,
                 show_progress_bar=False,
             ))[0].tolist()
